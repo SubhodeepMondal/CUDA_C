@@ -1,15 +1,6 @@
 #include<cuda_runtime.h>
 #include<stdio.h>
 
-void initilizeData(double *ptr, int size)
-{
-    time_t t;
-    srand((unsigned) time(&t));
-
-    for( int i=0; i<size; i++)
-        ptr[i] =(float)(rand() & 0xFF)/100.0f;
-}
-
 void matrixMultiplicationOnHost(double *a, double *b, double *c, int n)
 {
     int i, j, k;
