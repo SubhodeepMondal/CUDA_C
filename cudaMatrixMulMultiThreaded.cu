@@ -1,74 +1,83 @@
-#include<iostream>
-#include"cudalibrary.h"
+#include <iostream>
+#include "cudalibrary.h"
 
-int main(){
-    freopen("io/cudamulMultithreaded.csv","w",stdout);
-    freopen("io/input.txt","r",stdin);
+int main()
+{
+    freopen("io/cudamulMultithreaded.csv", "w", stdout);
+    freopen("io/input.txt", "r", stdin);
 
-    double *a, *b, *c, *d;
-    int n;
+    double *a, *b, *d, *e;
+    int a_m, a_n, b_m, b_n;
+    int aElem, bElem, nElem;
 
-    std::cin>>n;
-    int nElem = 1 << (n*2);
-    n=(int)sqrt(nElem);
+    std::cin >> a_m >> a_n >> b_m >> b_n;
 
+    if (a_n == b_m)
+    {
+        aElem = a_m * a_n;
+        bElem = a_n * b_n;
+        nElem = a_m * b_n;
 
-    cudaSetDevice(0);
+        cudaMallocManaged((double **)&a, aElem * sizeof(double));
+        cudaMallocManaged((double **)&b, bElem * sizeof(double));
+        cudaMallocManaged((double **)&d, nElem * sizeof(double));
+        cudaMallocManaged((double **)&e, nElem * sizeof(double));
 
-    cudaMallocManaged((double**)&a,nElem*sizeof(double));
-    cudaMallocManaged((double**)&b,nElem*sizeof(double));
-    cudaMallocManaged((double**)&c,nElem*sizeof(double));
-    cudaMallocManaged((double**)&d,nElem*sqrt(nElem)*sizeof(double));
+        initilizeData(a, aElem);
+        initilizeData(b, bElem);
 
-    initilizeData(a,nElem);
-    initilizeData(b,nElem);
+        // for (int i = 0; i < a_m; i++)
+        // {
+        //     for (int j = 0; j < a_n; j++)
+        //     {
+        //         std::cout << a[j + i * a_n] << ", ";
+        //     }
+        //     std::cout << std::endl;
+        // }
+        // std::cout << std::endl;
 
-    dim3 block(16,16);
-    dim3 grid((int)sqrt(nElem/(block.x * block.y)),(int)sqrt(nElem/(block.x * block.y)));
+        // for (int i = 0; i < a_n; i++)
+        // {
+        //     for (int j = 0; j < b_n; j++)
+        //     {
+        //         std::cout << b[j + i * b_n] << ", ";
+        //     }
+        //     std::cout << std::endl;
+        // }
+        // std::cout << std::endl;
 
-    std::cout<<(int)pow(n,2) << " " << std::endl;
-    std::cout <<block.x <<" " <<block.y <<" " <<grid.x <<" " <<grid.y<< std::endl;
+        matrixMultiplication(a, b, e, a_m, a_n, b_m, b_n);
+        std::cout << std::endl
+                  << std::endl;
 
-    cudaMatrixMulMultiParallesied<<<grid,block>>>(a,b,c,d);
-    cudaDeviceSynchronize();
+        double sum = 0;
+        // for (int i = 0; i < a_m; i++)
+        // {
+        //     for (int j = 0; j < b_n; j++)
+        //     {
+        //         sum = 0;
+        //         for (int k = 0; k < a_n; k++)
+        //         {
+        //             sum += a[i * a_n + k] * b[k * b_n + j];
+        //         }
+        //         d[i * b_n + j] = sum;
+        //         // std::cout << d[i * b_n + j] << ",";
+        //     }
+        //     // std::cout << std::endl;
+        // }
 
-    
-
-    for(int i =0; i<n; i++){
-        for(int j=0; j<n; j++)
-            std::cout << a[(i * n + j)] << ",";
-        std::cout << std::endl;
+        // std::cout << std::endl;
+        // for (int i = 0; i < a_m; i++)
+        // {
+        //     for (int j = 0; j < b_n; j++)
+        //         std::cout << e[i * b_n + j] << ",";
+        //     std::cout << std::endl;
+        // }
     }
-    std::cout << std::endl<<std::endl;
-
-
-    for(int i =0; i<n; i++){
-        for(int j=0; j<n; j++)
-            std::cout << b[(i * n + j)] << ",";
-        std::cout << std::endl;
-    }
-    std::cout << std::endl<<std::endl;
-
-
-    double sum =0;
-    for (int i = 0; i<n; i++){
-        for(int j =0; j<n;j++){
-            sum =0;
-            for(int k=0; k<n; k++){
-                sum += a[i*n+k] * b[k*n+j];
-            }
-            c[i*n+j] =sum;
-            std::cout << c[i*n+j] << ",";
-        }
-        std::cout << std::endl;
+    else
+    {
+        std::cout << "Two metrices are not in proper order";
     }
 
-
-    std:: cout << std::endl;
-    for(int i =0; i<n; i++){
-        for(int j=0; j<n; j++)
-            std::cout << d[(i * n + j*n*n)] << ",";
-        std::cout << std::endl;
-    }
-    std::cout << std::endl<<std::endl;
+    // checkMultiplication(d, e, a_m, b_n);
 }

@@ -3,7 +3,7 @@
 
 int main(){
 
-    freopen("cudarollingsum.csv","w",stdout);
+    freopen("io/cudarollingsum.csv","w",stdout);
     double *a,b;
     int i,n=16;
 
@@ -18,6 +18,11 @@ int main(){
     b = 0;
     for (i=0;i<n;i++)
         b += a[i];
+
+    for (i=0;i<n;i++)
+        std::cout << a[i] << ",";
+
+    std::cout << std::endl;
     
 
     //dim3 grid,block;
@@ -27,7 +32,10 @@ int main(){
     cudaRollingSum<<<grid,block>>>(a);
     cudaDeviceSynchronize();
 
-    std::cout << b << ", ";
+
+
+    std::cout << b << ", "<< std::endl;
     
-    std::cout << a[0] << ",";
+    for (i=0;i<n;i++)
+        std::cout << a[i] << ",";
 }

@@ -1,23 +1,22 @@
-#include<cuda_runtime.h>
-
+#include <cuda_runtime.h>
 
 void initilizeData(double *ptr, int size)
 {
     time_t t;
-    srand((unsigned) time(&t));
+    srand((unsigned)time(&t));
 
-    for( int i=0; i<size; i++)
-        ptr[i] =(float)(rand() & 0xFF)/100.0f;
+    for (int i = 0; i < size; i++)
+        ptr[i] = (float)(rand() & 0xFF) / 117.00000;
 }
 
-__global__ void cudaTranspose(unsigned int *a, unsigned int *b, int xsize,int ysize){
-    int ix,iy, mat_in,mat_tra;
-
+__global__ void cudaTranspose(unsigned int *a, unsigned int *b, int xsize, int ysize)
+{
+    int ix, iy, mat_in, mat_tra;
 
     __shared__ unsigned int smallblock[32][32];
 
-    ix = blockDim.x * blockIdx.x + threadIdx.x ;
-    iy = blockDim.y * blockIdx.y + threadIdx.y ;
+    ix = blockDim.x * blockIdx.x + threadIdx.x;
+    iy = blockDim.y * blockIdx.y + threadIdx.y;
 
     mat_in = ix * xsize + iy;
 
@@ -28,57 +27,157 @@ __global__ void cudaTranspose(unsigned int *a, unsigned int *b, int xsize,int ys
 
     mat_tra = iy * ysize + ix;
 
-        smallblock[threadIdx.x][threadIdx.y] =mat_in;
-        __syncthreads();
-        b[mat_tra] = smallblock[icol][irow];
+    smallblock[threadIdx.x][threadIdx.y] = mat_in;
+    __syncthreads();
+    b[mat_tra] = smallblock[icol][irow];
 }
 
- __global__ void cudaDotMul(double *a,double *b, double *c,int x,int y){
-    int n = blockDim.x;
-    int ind,i,k ;
+__global__ void cudaDotMul(double *a, double *b, double *c, int x, int y, int a_m, int a_n, int b_m, int b_n)
+{
+    int n = b_m;
+    int ind, i;
     double val;
+    unsigned mask = 0xffffffff;
 
-    ind = (x * n + threadIdx.x) + (y * n * n);
-    
-    c[ind] = a[threadIdx.x+x*n] * b[y+threadIdx.x*n];
+    ind = (threadIdx.x + x * b_m) + (y * a_m * b_m);
+    if (threadIdx.x < a_n)
+    {
+        c[ind] = a[threadIdx.x + x * a_n] * b[threadIdx.x * b_n + y];
+    }
+    else
+        c[ind] = 0.0f;
+
     __syncthreads();
 
-    k=n;
-    for(i =n/2;i>0; i/=2){
-        val = c[ind];
-        val = __shfl_down_sync(k,val,i);
-        c[ind] += val;
-        k /=2;
+    if (threadIdx.x < a_n)
+    {
+        for (i = n / 2; i > 0; i /= 2)
+        {
+            val = c[ind];
+            val = __shfl_down_sync(mask, val, i);
+            c[ind] += val;
+        }
     }
-
 }
 
-__global__ void cudaMatrixMulMultiParallesied(double *a,double *b,double *c, double *d){
-    int ix,iy,rowDim;
+__global__ void cudaMatrixMulMultiParallesied(double *a, double *b, double *c, double *d, int a_m, int a_n, int b_m, int b_n)
+{
+    int ix, iy, rowDim;
     ix = threadIdx.x + blockIdx.x * blockDim.x;
     iy = threadIdx.y + blockIdx.y * blockDim.y;
-    rowDim = blockDim.x * gridDim.x;
-
-    cudaDotMul<<<1,rowDim>>>(a,b,d,ix,iy);
-
+    rowDim = b_m;
+    d[ix + iy * a_m] = 0;
+    if (ix < a_m && iy < b_n)
+    {
+        cudaDotMul<<<1, rowDim>>>(a, b, c, ix, iy, a_m, a_n, b_m, b_n);
+        d[ix + iy * a_m] += c[ix * b_m * a_m + iy * b_m];
+    }
 }
 
-__global__ void cudaRollingSum(double *a){
+__global__ void cudaRollingSum(double *a)
+{
     int n = blockDim.x;
-    int ind,i,k ;
+    int ind, i, k;
     double val;
     ind = threadIdx.x;
+    unsigned x = 0xffffffff;
 
-    printf("%d, %lf\n",threadIdx.x, a[ind]);
-    k=n;
-    for(i =n/2;i>0; i/=2){
-        val =  a[ind];
-        val =  __shfl_down_sync(k,val,i);
-        a[ind] += val;
-        if(ind<i)
-            printf("%d, %lf\n",threadIdx.x, a[ind]);
-        k /=2;
+    k = n;
+    if (threadIdx.x < n)
+    {
+        for (i = n / 2; i > 0; i /= 2)
+        {
+            val = a[ind];
+            val = __shfl_down_sync(x, val, i);
+            a[ind] += val;
+            k /= 2;
+        }
+    }
+}
 
+__device__ double cudaSubDotMul(double *a, double *b, int a_m, int a_n, int b_m, int b_n, int n)
+{
+    double sum = 0;
+
+    for (int i = 0; i < n; i++)
+    {
+        sum += a[i] * b[i];
     }
 
+    return sum;
+}
+
+__global__ void cudaSubMul(double *a, double *b, double *d, int a_m, int a_n, int b_m, int b_n, int i, int j)
+{
+    __shared__ double Y_shared[32][33];
+
+    double val;
+
+
+    int Ai, Bi, Bj,n;
+
+    Bi = j + threadIdx.x;
+    Bj = i + threadIdx.y;
+    Ai = i + (threadIdx.y + blockDim.y * blockIdx.y) * a_n;
+    (a_n - i) >= 32 ? n = 32 : n = (a_n-i);
+
+    if (Bi < b_n && Bj < b_m)
+    {
+        Y_shared[threadIdx.x][threadIdx.y] = b[Bi + Bj * b_n];
+    }
+    __syncthreads();
+
+    if (Bi < b_n && (threadIdx.y + blockDim.y * blockIdx.y) < a_m)
+    {
+
+        val = cudaSubDotMul((a + Ai), Y_shared[threadIdx.x], a_m, a_n, b_m, b_n, n);
+        __syncthreads();
+
+        d[Bi + (threadIdx.y + blockDim.y * blockIdx.y) * b_n] += val;
+    }
+}
+
+void matrixMultiplication(double *a, double *b, double *d, int a_m, int a_n, int b_m, int b_n)
+{
+    int i, j;
+    dim3 block, grid;
+    block.x = 32;
+    block.y = 32;
+    grid.x = 1;
+    grid.y = ceil(a_m / 32.0f);
+
+    cudaSetDevice(0);
+
+    for (i = 0; i < b_m; i += 32)
+    {
+        for (j = 0; j < b_n; j += 32)
+        {
+            cudaSubMul<<<grid, block>>>(a, b, d, a_m, a_n, b_m, b_n, i, j);
+        }
+    }
+}
+
+int checkMultiplication(double *a, double *b, int a_m, int a_n)
+{
+    int flag = 1;
+    for (int i = 0; i < a_m; i++)
+    {
+        for (int j = 0; j < a_n; j++)
+        {
+            if (a[j + i * a_n] - b[j + i * a_n] < 0.01)
+            {
+                flag = 1;
+            }
+            else
+            {
+                flag = 0;
+                break;
+            }
+        }
+        if (flag == 0)
+            break;
+    }
+    
+    flag == 1 ? std::cout << "Two matrices are a match!" << std::endl : std::cout << "Two matrices are not a match!" << std::endl;
+    return flag;
 }
