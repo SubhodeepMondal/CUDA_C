@@ -10,6 +10,9 @@ int main()
     int a_m, a_n, b_m, b_n;
     int aElem, bElem, nElem;
 
+    cudaMatrixMultiplication cMul;
+
+
     std::cin >> a_m >> a_n >> b_m >> b_n;
 
     if (a_n == b_m)
@@ -46,11 +49,11 @@ int main()
         // }
         // std::cout << std::endl;
 
-        matrixMultiplication(a, b, e, a_m, a_n, b_m, b_n);
+        cMul.matrixMultiplication(a, b, e, a_m, a_n, b_m, b_n);
         std::cout << std::endl
                   << std::endl;
 
-        double sum = 0;
+        
         // for (int i = 0; i < a_m; i++)
         // {
         //     for (int j = 0; j < b_n; j++)

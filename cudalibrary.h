@@ -1,14 +1,18 @@
 #include <cuda_runtime.h>
+#include <stdarg.h>
 
-void initilizeData(double *ptr, int size)
+void initilizeData(double *data, int nElem)
 {
     time_t t;
     srand((unsigned)time(&t));
 
-    for (int i = 0; i < size; i++)
-        ptr[i] = (float)(rand() & 0xFF) / 117.00000;
+    for (int i = 0; i < nElem; i++)
+        data[i] = (float)(rand() & 0xFF) / 117.00000;
 }
 
+
+namespace cuda
+{
 __global__ void cudaTranspose(unsigned int *a, unsigned int *b, int xsize, int ysize)
 {
     int ix, iy, mat_in, mat_tra;
@@ -113,13 +117,12 @@ __global__ void cudaSubMul(double *a, double *b, double *d, int a_m, int a_n, in
 
     double val;
 
-
-    int Ai, Bi, Bj,n;
+    int Ai, Bi, Bj, n;
 
     Bi = j + threadIdx.x;
     Bj = i + threadIdx.y;
     Ai = i + (threadIdx.y + blockDim.y * blockIdx.y) * a_n;
-    (a_n - i) >= 32 ? n = 32 : n = (a_n-i);
+    (a_n - i) >= 32 ? n = 32 : n = (a_n - i);
 
     if (Bi < b_n && Bj < b_m)
     {
@@ -137,47 +140,137 @@ __global__ void cudaSubMul(double *a, double *b, double *d, int a_m, int a_n, in
     }
 }
 
-void matrixMultiplication(double *a, double *b, double *d, int a_m, int a_n, int b_m, int b_n)
+__global__ void print(double *a)
 {
-    int i, j;
-    dim3 block, grid;
-    block.x = 32;
-    block.y = 32;
-    grid.x = 1;
-    grid.y = ceil(a_m / 32.0f);
-
-    cudaSetDevice(0);
-
-    for (i = 0; i < b_m; i += 32)
-    {
-        for (j = 0; j < b_n; j += 32)
-        {
-            cudaSubMul<<<grid, block>>>(a, b, d, a_m, a_n, b_m, b_n, i, j);
-        }
-    }
+    int idx = threadIdx.x;
+    printf("%lf, ", a[idx]);
+}
 }
 
-int checkMultiplication(double *a, double *b, int a_m, int a_n)
+
+template <class T>
+class NDArray
 {
-    int flag = 1;
-    for (int i = 0; i < a_m; i++)
+public:
+    int nDim;
+    int *dimention;
+    int nElem;
+    T *data;
+
+public:
+    NDArray(int n, ...)
     {
-        for (int j = 0; j < a_n; j++)
+        va_list valist;
+
+        nDim = n;
+        nElem = 1;
+        dimention = new int[n];
+        va_start(valist, n);
+
+        for (int i = 0; i < n; i++)
         {
-            if (a[j + i * a_n] - b[j + i * a_n] < 0.01)
-            {
-                flag = 1;
-            }
-            else
-            {
-                flag = 0;
-                break;
-            }
+            dimention[i] = va_arg(valist, int);
         }
-        if (flag == 0)
-            break;
+
+        for (int i = 0; i < nDim; i++)
+        {
+            nElem *= dimention[i];
+        }
+
+        this->data = new T[nElem];
     }
-    
-    flag == 1 ? std::cout << "Two matrices are a match!" << std::endl : std::cout << "Two matrices are not a match!" << std::endl;
-    return flag;
-}
+
+    NDArray()
+    {
+    }
+
+    void printDimentions()
+    {
+        for (int i = 0; i < nDim; i++)
+            std::cout << dimention[i] << ", ";
+        std::cout << std::endl;
+    }
+
+    void printData()
+    {
+        for (int i = 0; i < nElem; i++)
+        {
+            std::cout << data[i] << ", ";
+        }
+    }
+
+    void initData(T *data)
+    {
+        for (int i = 0; i < nElem; i++)
+            this->data[i] = data[i];
+    }
+
+    void initRandData()
+    {
+        time_t t;
+        srand((unsigned)time(&t));
+
+        for (int i = 0; i < nElem; i++)
+            data[i] = (float)(rand() & 0xFF) / 117.00000;
+    }
+    void copyData(T *data)
+    {
+        for (int i = 0; i < nElem; i++)
+            data[i] = this->data[i];
+        std::cout << std::endl;
+    }
+};
+
+
+class NDMath
+{
+public:
+    NDArray<double> multiplication(NDArray<double> a, NDArray<double> b)
+    {
+        int i, j, a_m, a_n, b_m, b_n;
+        dim3 block, grid;
+        double *ptrA, *ptrB, *ptrC;
+        a_m = a.dimention[0];
+        a_n = a.dimention[1];
+        b_m = b.dimention[0];
+        b_n = b.dimention[1];
+
+        NDArray<double> c(2, a_m, b_n);
+
+        if (a_n == b_m)
+        {
+            cudaMallocManaged((double **)&ptrA, sizeof(double) * a.nElem);
+            cudaMallocManaged((double **)&ptrB, sizeof(double) * b.nElem);
+            cudaMallocManaged((double **)&ptrC, sizeof(double) * c.nElem);
+
+            a.copyData(ptrA);
+            b.copyData(ptrB);
+
+            block.x = 32;
+            block.y = 32;
+            grid.x = 1;
+            grid.y = ceil(a_m / 32.0f);
+
+            std::cout << block.x << " " << block.y << " " << grid.x << " " << grid.y << std::endl;
+
+            cudaSetDevice(0);
+
+            for (i = 0; i < b_m; i += 32)
+            {
+                for (j = 0; j < b_n; j += 32)
+                {
+                    cuda::cudaSubMul<<<grid, block>>>(ptrA, ptrB, ptrC, a_m, a_n, b_m, b_n, i, j);
+                }
+            }
+            cudaDeviceSynchronize();
+
+            c.initData(ptrC);
+
+            for (int i = 0; i < 10; i++)
+                std::cout << ptrC[i] << ", ";
+            std::cout << std::endl;
+        }
+
+        return c;
+    }
+};
