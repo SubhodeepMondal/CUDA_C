@@ -75,7 +75,7 @@ public:
         Layer *ptr;
         std::random_device generator;
         std::uniform_int_distribution<int> distribution;
-        // NDArray<double, 1> input;
+        NDArray<double, 1> Cost;
 
         cudaStream_t stream;
         cudaSetDevice(0);
@@ -85,30 +85,23 @@ public:
 
         distribution = std::uniform_int_distribution<int>(0, no_of_sample);
 
-        ptr = input;
-
-        cudaSetDevice(0);
         cudaStreamCreate(&stream);
 
-        search.search_param = "update_stream";
+        ptr = input;
         search.cuda_Stream = stream;
-        ptr->searchDFS(search);
-
-        search.search_param = "initilize_output_intermidiate";
         search.Integer = batch_size;
+        search.search_param = "prepare_training";
         ptr->searchDFS(search);
 
-        search.search_param = "initilize_input_intermidiate";
-        ptr->searchDFS(search);
-
-        search.search_param = "initilize_weights_biases_gpu";
-        ptr->searchDFS(search);
+        Cost = NDArray<double, 1>(2,1,epochs);
 
         for (int i = 0; i < epochs; i++)
         {
             unsigned no_of_data, index;
             batch_index = distribution(generator);
             batch_index = (no_of_sample - batch_index) > batch_size ? batch_index : (no_of_sample - batch_size);
+
+            // std::cout << "Epoch: " << i+1 << ", batch index: " << batch_index << " " ;
 
             ptr = input;
             no_of_data = no_of_input_feature * batch_size;
@@ -120,18 +113,18 @@ public:
             index = batch_index * Y.getDimensions()[0];
             ptr->initilizeTarget(0, no_of_data, Y.getData() + index);
 
-            ptr = input;
-            ptr->printInputIntermediate();
+            // ptr = input;
+            // ptr->printInputIntermediate();
 
-            ptr = output;
-            ptr->printTarget();
+            // ptr = output;
+            // ptr->printTarget();
 
             ptr = input;
             search.search_param = "forward_propagation";
             ptr->searchDFS(search);
 
             ptr = output;
-            ptr->findCost(loss);
+            Cost.initPartialData(i,1, ptr->findCost(loss)); 
 
             search.search_param = "backward_propagation";
             ptr->searchBFS(search);
@@ -143,6 +136,7 @@ public:
             // cudaStreamSynchronize(stream);
         }
 
+        Cost.printData();
         // ptr = input;
         // search.search_param = "commit_weights_biases";
         // ptr->searchDFS(search);
@@ -175,10 +169,11 @@ public:
         // str_optimizer = optimizer;
         // str_metric = metrics;
 
-        Layer *ptr = output;
+        Layer *ptr = input;
 
         search.search_param = "compile";
-        ptr->searchBFS(search);
+        search.String = optimizer;
+        ptr->searchDFS(search);
 
         switch (st_loss.loss[loss])
         {
@@ -189,30 +184,6 @@ public:
         default:
             break;
         }
-
-        switch (st_optimizer.optimizer[optimizer])
-        {
-        case this->st_optimizer.sgd:
-        {
-            this->optimizer = new SGD;
-            break;
-        }
-
-        default:
-            break;
-        }
-
-        ptr = input;
-        ptr->updateOptimizer(this->optimizer);
-
-        search.search_param = "initilize_weights_biases";
-        ptr->searchDFS(search);
-
-        search.search_param = "initilize_output";
-        ptr->searchDFS(search);
-
-        search.search_param = "initilize_optimizer";
-        ptr->searchDFS(search);
 
         ptr = output;
         search.search_param = "set_input_pointer";

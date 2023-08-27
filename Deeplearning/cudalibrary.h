@@ -107,6 +107,11 @@ namespace gpu
         ind = threadIdx.x;
         unsigned x = 0xffffffff;
 
+        // std::cout << "delta_output:\n";
+        // delta_output.printData();
+        // std::cout << "delta_output:\n";
+        // delta_output.printData();
+
         k = n;
         if (threadIdx.x < n)
         {
@@ -350,13 +355,15 @@ namespace gpu
         }
     }
 
-    __global__ void matrixSquaredError(double *a, double *b, double *c, unsigned x, unsigned y)
+    __global__ void matrixSquaredError(double *a, double *b, unsigned x, unsigned y)
     {
-        unsigned id_x;
+        unsigned id_x, id_y, lin_idx;
         id_x = threadIdx.x + (blockDim.x * blockIdx.x);
+        id_y = threadIdx.y + (blockDim.y * blockIdx.y);
+        lin_idx = id_x + id_y * x;
 
-        if (id_x < x)
-            c[id_x] = pow((a[id_x] - b[id_x]), 2);
+        if (id_x < x && id_y < y)
+            b[lin_idx] = pow((a[lin_idx]), 2);
     }
 
     __global__ void matrixFindMean(double *a, unsigned x, unsigned y, unsigned mean)
@@ -644,7 +651,6 @@ public:
 
     void initData(NDArray<double, 1> data)
     {
-        std::cout << "Device to device transfer.\n";
         cudaMemcpy(this->data, data.getData(), sizeof(T) * nElem, cudaMemcpyDeviceToDevice);
     }
 
@@ -696,7 +702,9 @@ public:
 class NDMath
 {
     NDArray<double, 1> *nd_ptr;
-    unsigned ptrDim, max_feature, max_neuron;
+
+    NDArray<double, 1> intermediate_output;
+    unsigned isIntermediateOutputUpdated = 0, isSymbolCopied = 0;
     // cudaStream_t stream;
 
 public:
@@ -777,13 +785,16 @@ public:
     {
         unsigned intr_x, intr_y, intr_z;
         dim3 block, grid;
-        NDArray<double, 1> intermediate_output;
 
         intr_x = weights.getDimensions()[0];     // no of neurons
         intr_y = input.getDimensions()[1];       // no of batches
         intr_z = weights.getDimensions()[1] + 1; // no of features
 
-        intermediate_output = NDArray<double, 1>(3, intr_x, intr_y, intr_z);
+        if (!isIntermediateOutputUpdated)
+        {
+            intermediate_output = NDArray<double, 1>(3, intr_x, intr_y, intr_z);
+            isIntermediateOutputUpdated = 1;
+        }
 
         block.x = (intr_x > 8) ? 8 : intr_x;
         block.y = (intr_y > 8) ? 8 : intr_y;
@@ -795,7 +806,7 @@ public:
 
         // std::cout << "\nInput:\n";
         // input.printData();
-        // std::cout << "Weights:\n";
+        // std::cout << "Weights:" << weights.getData() << "\n";
         // weights.printData();
         // std::cout << "Biases:\n";
         // biases.printData();
@@ -812,8 +823,6 @@ public:
 
         // std::cout << "Output:\n";
         // output.printData();
-
-        intermediate_output.destroy();
     }
 
     void updateWeights(NDArray<double, 1> weights, NDArray<double, 1> delta_weights, double learning_rate, cudaStream_t stream)
@@ -823,13 +832,11 @@ public:
         intr_x = weights.getDimensions()[0];
         intr_y = weights.getDimensions()[1];
 
-        cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
-
         // std::cout << "Delta weights:\n";
         // weights.printData();
 
-        // std::cout << "Delta weights:\n";
-        // delta_weights.printData();
+        // std::cout << "weights:\n";
+        // weights.printData();
 
         block.x = (intr_x > 32) ? 32 : intr_x;
         block.y = (intr_y > 32) ? 32 : intr_y;
@@ -839,7 +846,7 @@ public:
 
         gpu::matrixUpdateWeightsBiases<<<grid, block, 0, stream>>>(weights.getData(), delta_weights.getData(), intr_x, intr_y);
 
-        // std::cout << "Delta weights:\n";
+        // std::cout << "Updated weights:\n";
         // weights.printData();
         // std:: cout << "\n\n\n";
     }
@@ -850,7 +857,13 @@ public:
         dim3 grid, block;
         intr_x = biases.getDimensions()[0];
 
-        cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
+        if (!isSymbolCopied)
+        {
+            cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
+            isSymbolCopied = 1;
+        }
+
+        // cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
 
         // std::cout << "Biases:\n";
         // biases.printData();
@@ -875,7 +888,7 @@ public:
         intr_x = input.getDimensions()[0];
         intr_y = input.getDimensions()[0];
 
-        cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
+        // cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
 
         block.x = (intr_x > 32) ? 32 : intr_x;
         block.y = (intr_y > 32) ? 32 : intr_y;
@@ -883,7 +896,7 @@ public:
         grid.x = ceil((float)intr_x / block.x);
         grid.y = ceil((float)intr_y / block.y);
 
-        gpu::matrixUpdateDifferentialInput<<<grid, block, 0, stream>>>(input.getData(), delta_input.getData(), difference_input.getData(),intr_x, intr_y);
+        gpu::matrixUpdateDifferentialInput<<<grid, block, 0, stream>>>(input.getData(), delta_input.getData(), difference_input.getData(), intr_x, intr_y);
 
         // std::cout << "input:\n";
         // input.printData();
@@ -891,19 +904,19 @@ public:
         // difference_input.printData();
     }
 
-    void getDifferentialWeights(NDArray<double, 1> input, NDArray<double, 1> delta_output, NDArray<double, 1> difference, NDArray<double, 1> delta_weights, cudaStream_t stream)
+    void getDifferentialWeights(NDArray<double, 1> input, NDArray<double, 1> delta_output, NDArray<double, 1> difference, NDArray<double, 1> delta_weights, NDArray<double, 1> delta_weights_intermediate, cudaStream_t stream)
     {
         int intr_x, intr_y, intr_z;
         dim3 grid, block;
-        NDArray<double, 1> delta_weights_intermediate;
+
+        // NDArray<double, 1> delta_weights_intermediate;
 
         intr_x = difference.getDimensions()[0]; // no of output neuron
         intr_y = input.getDimensions()[0];      // no of input feature
         intr_z = input.getDimensions()[1];      // no of batches
 
-        delta_weights_intermediate = NDArray<double, 1>(3, intr_x, intr_y, intr_z);
+        // delta_weights_intermediate = NDArray<double, 1>(3, intr_x, intr_y, intr_z);
 
-        // std::cout << intr_x << ", " << intr_y << ", " << intr_z << "\n";
         // std::cout << "input:\n";
         // input.printData();
         // std::cout << "delta_output:\n";
@@ -927,21 +940,22 @@ public:
         gpu::matrixRollingSum<<<grid, block, 0, stream>>>(delta_weights_intermediate.getData(), delta_weights.getData(), intr_x, intr_y, intr_z);
 
         gpu::matrixFindMean<<<grid, block, 0, stream>>>(delta_weights.getData(), intr_x, intr_y, intr_z);
+        // delta_weights_intermediate.destroy();
 
         // std::cout << "Delta weights:\n";
         // delta_weights.printData();
     }
 
-    void getDifferentialBiases(NDArray<double, 1> delta_output, NDArray<double, 1> difference, NDArray<double, 1> delta_biases, cudaStream_t stream)
+    void getDifferentialBiases(NDArray<double, 1> delta_output, NDArray<double, 1> difference, NDArray<double, 1> delta_biases, NDArray<double, 1> delta_biases_intermediate, cudaStream_t stream)
     {
         int intr_x, intr_y;
         dim3 grid, block;
-        NDArray<double, 1> delta_biases_intermediate;
+        // NDArray<double, 1> delta_biases_intermediate;
 
         intr_x = delta_output.getDimensions()[0]; // no of output neuron
         intr_y = delta_output.getDimensions()[1]; // no of batches
 
-        delta_biases_intermediate = NDArray<double, 1>(2, intr_x, intr_y);
+        // delta_biases_intermediate = NDArray<double, 1>(2, intr_x, intr_y);
 
         block.x = (intr_x > 8) ? 8 : intr_x;
         block.y = (intr_y > 8) ? 8 : intr_y;
@@ -949,6 +963,8 @@ public:
         grid.x = ceil((float)intr_x / block.x);
         grid.y = ceil((float)intr_y / block.y);
 
+        // std::cout << "Biasest:\n";
+        // delta_output.printData();
         // std::cout << "delta_output:\n";
         // delta_output.printData();
         // std::cout << "difference:\n";
@@ -962,6 +978,7 @@ public:
         gpu::matrixRollingSum<<<grid, block, 0, stream>>>(delta_biases_intermediate.getData(), delta_biases.getData(), intr_x, 1, intr_y);
 
         gpu::matrixFindMean<<<grid, block, 0, stream>>>(delta_biases.getData(), intr_x, 1, intr_y);
+        // delta_biases_intermediate.destroy();
         // d_weights_biases.printData();
         // std::cout << "Delta Biases Intr:\n";
         // delta_biases_intermediate.printData();
@@ -969,15 +986,15 @@ public:
         // delta_biases.printData();
     }
 
-    void getDifferentialInput(NDArray<double, 1> weights, NDArray<double, 1> delta_output, NDArray<double, 1> difference, NDArray<double, 1> delta_input, cudaStream_t stream)
+    void getDifferentialInput(NDArray<double, 1> weights, NDArray<double, 1> delta_output, NDArray<double, 1> difference, NDArray<double, 1> difference_input, NDArray<double, 1> delta_input_intermediate, NDArray<double, 1> delta_input, cudaStream_t stream)
     {
-        NDArray<double, 1> delta_input_intermediate;
+        // NDArray<double, 1> delta_input_intermediate;
         unsigned intr_x, intr_y, intr_z; // intr_x: no of input + bias, intr_y: batch size, intr_z = no of neuron
         dim3 grid, block;
         intr_x = delta_input.getDimensions()[0]; // no of input feature
         intr_y = delta_input.getDimensions()[1]; // no of batchs
         intr_z = weights.getDimensions()[0];     // no of neuron
-        delta_input_intermediate = NDArray<double, 1>(3, intr_x, intr_y, intr_z);
+        // delta_input_intermediate = NDArray<double, 1>(3, intr_x, intr_y, intr_z);
 
         block.x = (intr_x > 8) ? 8 : intr_x;
         block.y = (intr_y > 8) ? 8 : intr_y;
@@ -987,7 +1004,6 @@ public:
         grid.y = ceil((float)intr_y / block.y);
         grid.z = ceil((float)intr_z / block.z);
 
-        // delta_input_intermediate.printDimensions();
         // std::cout << "\nweights_biases:\n";
         // weights.printData();
         // std::cout << "d_activation:\n";
@@ -1000,7 +1016,11 @@ public:
         block.z = 1;
         grid.z = 1;
 
-        gpu::matrixRollingSum<<<grid, block, 0, stream>>>(delta_input_intermediate.getData(), delta_input.getData(), intr_x, intr_y, intr_z);
+        gpu::matrixRollingSum<<<grid, block, 0, stream>>>(delta_input_intermediate.getData(), difference_input.getData(), intr_x, intr_y, intr_z);
+
+        // delta_input_intermediate.destroy();
+
+        // difference_input.initData(delta_input_intermediate.getData());
 
         // delta_input.initData(delta_input.getData());
         // gpu::matrixFindMean<<<grid, block, 0, stream>>>(delta_input.getData(), intr_x, intr_y, intr_z);
@@ -1008,7 +1028,7 @@ public:
         // std::cout << "delta_input intermediate:\n";
         // delta_input_intermediate.printData();
         // std::cout << "delta_input:\n";
-        // delta_input.printData();
+        // difference_input.printData();
     }
 
     void reluActivation(NDArray<double, 1> input, NDArray<double, 1> d_activation, cudaStream_t stream)
@@ -1058,30 +1078,33 @@ public:
         gpu::matrixLinear<<<grid, block, 0, stream>>>(input.getData(), d_activation.getData(), intr_x, intr_y);
     }
 
-    void squaredError(NDArray<double, 1> Y_predict, NDArray<double, 1> Y_target, NDArray<double, 1> diff, cudaStream_t stream)
+    void squaredError(NDArray<double, 1> Difference, NDArray<double, 1> Squared_Error, cudaStream_t stream)
     {
         unsigned intr_x, intr_y;
         dim3 grid, block;
 
-        intr_x = Y_predict.getDimensions()[0];
-        intr_y = Y_predict.getDimensions()[1];
+        intr_x = Difference.getDimensions()[0];
+        intr_y = Difference.getDimensions()[1];
 
         block.x = intr_x > 32 ? 32 : intr_x;
         block.y = intr_y > 32 ? 32 : intr_y;
         grid.x = ceil((float)intr_x / block.x);
         grid.y = ceil((float)intr_y / block.y);
 
-        gpu::matrixSquaredError<<<grid, block, 0, stream>>>(Y_predict.getData(), Y_target.getData(), diff.getData(), intr_x, intr_y);
+        gpu::matrixSquaredError<<<grid, block, 0, stream>>>(Difference.getData(), Squared_Error.getData(), intr_x, intr_y);
     }
 
-    void findMean(NDArray<double, 1> X, cudaStream_t stream)
+    void findMean(NDArray<double, 1> X, NDArray<double, 1> y, cudaStream_t stream)
     {
         unsigned intr_x, intr_y;
         dim3 grid, block;
         intr_x = X.getDimensions()[0];
         intr_y = X.getDimensions()[1];
 
-        gpu::matrixFindMean<<<grid, block, 0, stream>>>(X.getData(), intr_x, intr_y, intr_y);
+        gpu::matrixRollingSum<<<grid, block, 0, stream>>>(X.getData(), X.getData(), intr_x, 1, intr_y);
+        y.initData(X);
+
+        gpu::matrixFindMean<<<grid, block, 0, stream>>>(y.getData(), intr_x, intr_y, intr_y);
     }
 
     void findDifference(NDArray<double, 1> Y_predict, NDArray<double, 1> Y_target, NDArray<double, 1> Difference, cudaStream_t stream)

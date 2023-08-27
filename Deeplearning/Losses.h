@@ -25,7 +25,7 @@ typedef struct struct_Loss
 class Loss
 {
 protected:
-    NDMath math; 
+    NDMath math;
 
 public:
     virtual void findLoss(NDArray<double, 1> Y_predict, NDArray<double, 1> Y_target, NDArray<double, 1> Difference, NDArray<double, 1> Cost, cudaStream_t stream) {}
@@ -39,17 +39,25 @@ public:
 
 class Mean_Squared_Error : public Loss
 {
-    void meanError(NDArray<double, 1> Y_predict, NDArray<double, 1> C, cudaStream_t stream)
+    unsigned isSquaredErrorAlocated = 0;
+    NDArray<double, 1> squared_error;
+
+    void meanError(NDArray<double, 1> Difference, NDArray<double, 1> Cost, cudaStream_t stream)
     {
-        math.findMean(C, stream);
+
+        if (!isSquaredErrorAlocated)
+        {
+            squared_error= NDArray<double,1>(Difference.getNoOfDimensions(), Difference.getDimensions());
+            isSquaredErrorAlocated = 1;
+        }
+        math.squaredError(Difference, squared_error, stream);
+        math.findMean(squared_error, Cost, stream);
     }
 
 public:
     void findLoss(NDArray<double, 1> Y_predict, NDArray<double, 1> Y_target, NDArray<double, 1> Difference, NDArray<double, 1> Cost, cudaStream_t stream) override
     {
-        math.squaredError(Y_predict, Y_target, Cost, stream);
-        meanError(Y_predict, Cost, stream);
-
         math.findDifference(Y_predict, Y_target, Difference, stream);
+        meanError(Difference, Cost, stream);
     }
 };
