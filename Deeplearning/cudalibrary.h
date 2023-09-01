@@ -10,7 +10,7 @@
 namespace gpu
 {
 
-    __device__ double learning_rate;
+    // __device__ double learning_rate;
 
     __global__ void printData(double *a, unsigned x, unsigned y, unsigned z)
     {
@@ -392,7 +392,7 @@ namespace gpu
         }
     }
 
-    __global__ void matrixUpdateWeightsBiases(double *weights_biases, double *d_weights_biases, unsigned a_m, unsigned a_n)
+    __global__ void matrixUpdateWeightsBiases(double *weights_biases, double *learning_rate, double *d_weights_biases, unsigned a_m, unsigned a_n)
     {
         unsigned indx_x, indx_y, index;
 
@@ -402,23 +402,106 @@ namespace gpu
         if (indx_x < a_m && indx_y < a_n)
         {
             index = indx_x + indx_y * a_m;
-            weights_biases[index] -= learning_rate * d_weights_biases[index];
+            weights_biases[index] -= learning_rate[index] * d_weights_biases[index]; //  ;
         }
     }
 
-    __global__ void matrixUpdateDifferentialInput(double *input, double *delta_input, double *difference_input, unsigned x, unsigned y)
+    __global__ void matrixUpdateWeightsBiasesSGDmomentum(double* sigma, double *learning_rate, double* sum_d_weights_biases, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
     {
-        unsigned indx_x, indx_y, idx;
+        unsigned indx_x, indx_y, index;
+        // double weighted_delta_weights_biases;
+
         indx_x = threadIdx.x + blockIdx.x * blockDim.x;
         indx_y = threadIdx.y + blockIdx.y * blockDim.y;
-        idx = indx_x + indx_y * x;
 
-        if (indx_x < x && indx_y < y)
+        if (indx_x < a_m && indx_y < a_n)
         {
-            difference_input[idx] = input[idx] - learning_rate * delta_input[idx];
+            index = indx_x + indx_y * a_m;
+
+            sum_d_weights_biases[index] = (*sigma) * sum_d_weights_biases[index] + (1 - (*sigma)) * d_weights_biases[index];
+            weights_biases[index] -= learning_rate[index] * sum_d_weights_biases[index]; //  ;
         }
     }
 
+    __global__ void matrixUpdateWeightsBiasesRMSprop(double* sigma, double* epsalon, double *learning_rate, double* sum_d_weights_biases, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
+    {
+        unsigned indx_x, indx_y, index;
+        double squared_delta_weights_biases;
+
+        indx_x = threadIdx.x + blockIdx.x * blockDim.x;
+        indx_y = threadIdx.y + blockIdx.y * blockDim.y;
+
+        if (indx_x < a_m && indx_y < a_n)
+        {
+            index = indx_x + indx_y * a_m;
+
+            squared_delta_weights_biases = pow(d_weights_biases[index], 2);
+
+            sum_d_weights_biases[index] = (*sigma) * sum_d_weights_biases[index] + (1 - (*sigma)) * squared_delta_weights_biases;
+            weights_biases[index] -= learning_rate[index] * d_weights_biases[index] / (sqrt( sum_d_weights_biases[index]) + (*epsalon)); //  ;
+        }
+    }
+
+    __global__ void matrixUpdateWeightsBiasesADAM(double* sigma, double* epsalon, double *learning_rate, double* sum_d_weights_biases, double* sum_d_weights_biases_squared, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
+    {
+        unsigned indx_x, indx_y, index;
+        double squared_delta_weights_biases;
+
+        indx_x = threadIdx.x + blockIdx.x * blockDim.x;
+        indx_y = threadIdx.y + blockIdx.y * blockDim.y;
+
+        if (indx_x < a_m && indx_y < a_n)
+        {
+            index = indx_x + indx_y * a_m;
+
+            squared_delta_weights_biases = pow(d_weights_biases[index], 2);
+
+            sum_d_weights_biases[index] = (*sigma) * sum_d_weights_biases[index] + (1 - (*sigma)) * d_weights_biases[index];
+            sum_d_weights_biases_squared[index] = (*sigma) * sum_d_weights_biases_squared[index] + (1 - (*sigma)) * squared_delta_weights_biases;
+
+            weights_biases[index] -= learning_rate[index] * sum_d_weights_biases[index] / (sqrt( sum_d_weights_biases_squared[index]) + (*epsalon)); //  ;
+        }
+    }
+
+    __global__ void matrixUpdateLearningRateAdagrad(double *epsalon, double *delta_weights_biases, double *sum_delta_weights, double *learning_rate, unsigned a_m, unsigned a_n)
+    {
+        unsigned indx_x, indx_y, index;
+        double squared_delta_weights_biases;
+
+        indx_x = threadIdx.x + blockIdx.x * blockDim.x;
+        indx_y = threadIdx.y + blockIdx.y * blockDim.y;
+
+        if (indx_x < a_m && indx_y < a_n)
+        {
+            index = indx_x + indx_y * a_m;
+
+            squared_delta_weights_biases = pow(delta_weights_biases[index], 2);
+            sum_delta_weights[index] += squared_delta_weights_biases;
+
+            learning_rate[index] /= sqrt(sum_delta_weights[index] + epsalon[0]);
+            learning_rate[index] = (learning_rate[index] < 0.001) ? 0.001 : learning_rate[index];
+        }
+    }
+
+    __global__ void matrixUpdateLearningRateAdadelta(double *epsalon, double *sigma, double *delta_weights_biases, double *sum_delta_weights, double *learning_rate, unsigned a_m, unsigned a_n)
+    {
+        unsigned indx_x, indx_y, index;
+        double squared_delta_weights_biases;
+
+        indx_x = threadIdx.x + blockIdx.x * blockDim.x;
+        indx_y = threadIdx.y + blockIdx.y * blockDim.y;
+
+        if (indx_x < a_m && indx_y < a_n)
+        {
+            index = indx_x + indx_y * a_m;
+
+            squared_delta_weights_biases = pow(delta_weights_biases[index], 2);
+            sum_delta_weights[index] = (*sigma) * sum_delta_weights[index] + (1 - (*sigma)) * squared_delta_weights_biases;
+
+            learning_rate[index] /= sqrt(sum_delta_weights[index] + (*epsalon));
+            learning_rate[index] = (learning_rate[index] < 0.001) ? 0.001 : learning_rate[index];
+        }
+    }
 }
 
 namespace cpu
@@ -640,6 +723,23 @@ public:
         std::cout << std::endl;
     }
 
+    void initData(T data)
+    {
+        if (type)
+        {
+            T *tempPtr = new T[nElem];
+            for (int i = 0; i < nElem; i++)
+                tempPtr[i] = data;
+
+            cudaMemcpy(this->data, tempPtr, sizeof(T) * nElem, cudaMemcpyHostToDevice);
+
+            delete[] tempPtr;
+        }
+        else
+            for (int i = 0; i < nElem; i++)
+                this->data[i] = data;
+    }
+
     void initData(T *data)
     {
         if (type)
@@ -776,11 +876,6 @@ public:
         return c;
     }
 
-    void print(NDArray<double, 1> output)
-    {
-        output.printData();
-    }
-
     void matrixDotMultiplication(NDArray<double, 1> input, NDArray<double, 1> weights, NDArray<double, 1> biases, NDArray<double, 1> output, cudaStream_t stream)
     {
         unsigned intr_x, intr_y, intr_z;
@@ -825,7 +920,69 @@ public:
         // output.printData();
     }
 
-    void updateWeights(NDArray<double, 1> weights, NDArray<double, 1> delta_weights, double learning_rate, cudaStream_t stream)
+    void updateLearningRateWeightsAdagrad(NDArray<double, 1> epsalon, NDArray<double, 1> sum_delta_weights, NDArray<double, 1> delta_weights, NDArray<double, 1> learning_rate_weights, cudaStream_t stream)
+    {
+        unsigned intr_x, intr_y;
+        dim3 grid, block;
+
+        intr_x = delta_weights.getDimensions()[0];
+        intr_y = delta_weights.getDimensions()[1];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+        block.y = (intr_y > 32) ? 32 : intr_y;
+
+        grid.x = ceil((float)intr_x / block.x);
+        grid.y = ceil((float)intr_y / block.y);
+
+        gpu::matrixUpdateLearningRateAdagrad<<<grid, block, 0, stream>>>(epsalon.getData(), delta_weights.getData(), sum_delta_weights.getData(), learning_rate_weights.getData(), intr_x, intr_y);
+    }
+
+    void updateLearningRateBiasesAdagrad(NDArray<double, 1> epsalon, NDArray<double, 1> sum_delta_biases, NDArray<double, 1> delta_biases, NDArray<double, 1> learning_rate_biases, cudaStream_t stream)
+    {
+        unsigned intr_x;
+        dim3 grid, block;
+
+        intr_x = delta_biases.getDimensions()[0];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+
+        grid.x = ceil((float)intr_x / block.x);
+
+        gpu::matrixUpdateLearningRateAdagrad<<<grid, block, 0, stream>>>(epsalon.getData(), delta_biases.getData(), sum_delta_biases.getData(), learning_rate_biases.getData(), intr_x, 1);
+    }
+
+    void updateLearningRateWeightsAdadelta(NDArray<double, 1> epsalon, NDArray<double, 1> sigma, NDArray<double, 1> sum_delta_weights, NDArray<double, 1> delta_weights, NDArray<double, 1> learning_rate_weights, cudaStream_t stream)
+    {
+        unsigned intr_x, intr_y;
+        dim3 grid, block;
+
+        intr_x = delta_weights.getDimensions()[0];
+        intr_y = delta_weights.getDimensions()[1];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+        block.y = (intr_y > 32) ? 32 : intr_y;
+
+        grid.x = ceil((float)intr_x / block.x);
+        grid.y = ceil((float)intr_y / block.y);
+
+        gpu::matrixUpdateLearningRateAdadelta<<<grid, block, 0, stream>>>(epsalon.getData(), sigma.getData(), delta_weights.getData(), sum_delta_weights.getData(), learning_rate_weights.getData(), intr_x, intr_y);
+    }
+
+    void updateLearningRateBiasesAdadelta(NDArray<double, 1> epsalon, NDArray<double, 1> sigma, NDArray<double, 1> sum_delta_biases, NDArray<double, 1> delta_biases, NDArray<double, 1> learning_rate_biases, cudaStream_t stream)
+    {
+        unsigned intr_x;
+        dim3 grid, block;
+
+        intr_x = delta_biases.getDimensions()[0];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+
+        grid.x = ceil((float)intr_x / block.x);
+
+        gpu::matrixUpdateLearningRateAdadelta<<<grid, block, 0, stream>>>(epsalon.getData(), sigma.getData(), delta_biases.getData(), sum_delta_biases.getData(), learning_rate_biases.getData(), intr_x, 1);
+    }
+
+    void updateWeights(NDArray<double, 1> weights, NDArray<double, 1> learning_rate, NDArray<double, 1> delta_weights, cudaStream_t stream)
     {
         unsigned intr_x, intr_y;
         dim3 grid, block;
@@ -844,26 +1001,18 @@ public:
         grid.x = ceil((float)intr_x / block.x);
         grid.y = ceil((float)intr_y / block.y);
 
-        gpu::matrixUpdateWeightsBiases<<<grid, block, 0, stream>>>(weights.getData(), delta_weights.getData(), intr_x, intr_y);
+        gpu::matrixUpdateWeightsBiases<<<grid, block, 0, stream>>>(weights.getData(), learning_rate.getData(), delta_weights.getData(), intr_x, intr_y);
 
         // std::cout << "Updated weights:\n";
         // weights.printData();
-        // std:: cout << "\n\n\n";
+        // std::cout << "\n\n\n";
     }
 
-    void updateBiases(NDArray<double, 1> biases, NDArray<double, 1> delta_biases, double learning_rate, cudaStream_t stream)
+    void updateBiases(NDArray<double, 1> biases, NDArray<double, 1> learning_rate, NDArray<double, 1> delta_biases, cudaStream_t stream)
     {
         unsigned intr_x;
         dim3 grid, block;
         intr_x = biases.getDimensions()[0];
-
-        if (!isSymbolCopied)
-        {
-            cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
-            isSymbolCopied = 1;
-        }
-
-        // cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
 
         // std::cout << "Biases:\n";
         // biases.printData();
@@ -874,21 +1023,19 @@ public:
 
         grid.x = ceil((float)intr_x / block.x);
 
-        gpu::matrixUpdateWeightsBiases<<<grid, block, 0, stream>>>(biases.getData(), delta_biases.getData(), intr_x, 1);
+        gpu::matrixUpdateWeightsBiases<<<grid, block, 0, stream>>>(biases.getData(), learning_rate.getData(), delta_biases.getData(), intr_x, 1);
 
         // std::cout << "Biases:\n";
         // biases.printData();
-        // std:: cout << "\n\n\n";
+        // std::cout << "\n\n\n";
     }
 
-    void updateDifferentialInput(NDArray<double, 1> input, NDArray<double, 1> delta_input, NDArray<double, 1> difference_input, double learning_rate, cudaStream_t stream)
+    void updateWeightsSGDmomentum(NDArray<double, 1> sigma, NDArray<double, 1> weights, NDArray<double, 1> learning_rate, NDArray<double, 1> sum_delta_weights, NDArray<double, 1> delta_weights, cudaStream_t stream)
     {
         unsigned intr_x, intr_y;
         dim3 grid, block;
-        intr_x = input.getDimensions()[0];
-        intr_y = input.getDimensions()[0];
-
-        // cudaMemcpyToSymbol(gpu::learning_rate, &learning_rate, sizeof(double));
+        intr_x = weights.getDimensions()[0];
+        intr_y = weights.getDimensions()[1];
 
         block.x = (intr_x > 32) ? 32 : intr_x;
         block.y = (intr_y > 32) ? 32 : intr_y;
@@ -896,12 +1043,78 @@ public:
         grid.x = ceil((float)intr_x / block.x);
         grid.y = ceil((float)intr_y / block.y);
 
-        gpu::matrixUpdateDifferentialInput<<<grid, block, 0, stream>>>(input.getData(), delta_input.getData(), difference_input.getData(), intr_x, intr_y);
+        gpu::matrixUpdateWeightsBiasesSGDmomentum<<<grid, block, 0, stream>>>(sigma.getData(), learning_rate.getData(), sum_delta_weights.getData(), delta_weights.getData(), weights.getData(), intr_x, intr_y);
+    }
 
-        // std::cout << "input:\n";
-        // input.printData();
-        // std::cout << "difference input:\n";
-        // difference_input.printData();
+    void updateBiasesSGDmomentum(NDArray<double, 1> sigma, NDArray<double, 1> biases, NDArray<double, 1> learning_rate, NDArray<double, 1> sum_delta_biases, NDArray<double, 1> delta_biases, cudaStream_t stream)
+    {
+        unsigned intr_x;
+        dim3 grid, block;
+        intr_x = biases.getDimensions()[0];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+
+        grid.x = ceil((float)intr_x / block.x);
+
+        gpu::matrixUpdateWeightsBiasesSGDmomentum<<<grid, block, 0, stream>>>(sigma.getData(), learning_rate.getData(), sum_delta_biases.getData(), delta_biases.getData(), biases.getData(), intr_x, 1);
+    }
+
+    void updateWeightsRMSpropDense(NDArray<double, 1> sigma, NDArray<double, 1> epsalon, NDArray<double, 1> weights, NDArray<double, 1> learning_rate, NDArray<double, 1> sum_delta_weights, NDArray<double, 1> delta_weights, cudaStream_t stream)
+    {
+        unsigned intr_x, intr_y;
+        dim3 grid, block;
+        intr_x = weights.getDimensions()[0];
+        intr_y = weights.getDimensions()[1];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+        block.y = (intr_y > 32) ? 32 : intr_y;
+
+        grid.x = ceil((float)intr_x / block.x);
+        grid.y = ceil((float)intr_y / block.y);
+
+        gpu::matrixUpdateWeightsBiasesRMSprop<<<grid, block, 0, stream>>>(sigma.getData(), epsalon.getData(), learning_rate.getData(), sum_delta_weights.getData(), delta_weights.getData(), weights.getData(), intr_x, intr_y);
+    }
+
+    void updateBiasesRMSpropDense(NDArray<double, 1> sigma, NDArray<double, 1> epsalon, NDArray<double, 1> biases, NDArray<double, 1> learning_rate, NDArray<double, 1> sum_delta_biases, NDArray<double, 1> delta_biases, cudaStream_t stream)
+    {
+        unsigned intr_x;
+        dim3 grid, block;
+        intr_x = biases.getDimensions()[0];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+
+        grid.x = ceil((float)intr_x / block.x);
+
+        gpu::matrixUpdateWeightsBiasesRMSprop<<<grid, block, 0, stream>>>(sigma.getData(), epsalon.getData(), learning_rate.getData(), sum_delta_biases.getData(), delta_biases.getData(), biases.getData(), intr_x, 1);
+    }
+
+    void updateWeightsADAMDense(NDArray<double, 1> sigma, NDArray<double, 1> epsalon, NDArray<double, 1> weights, NDArray<double, 1> learning_rate, NDArray<double, 1> sum_delta_weights, NDArray<double, 1> sum_delta_weights_square, NDArray<double, 1> delta_weights, cudaStream_t stream)
+    {
+        unsigned intr_x, intr_y;
+        dim3 grid, block;
+        intr_x = weights.getDimensions()[0];
+        intr_y = weights.getDimensions()[1];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+        block.y = (intr_y > 32) ? 32 : intr_y;
+
+        grid.x = ceil((float)intr_x / block.x);
+        grid.y = ceil((float)intr_y / block.y);
+
+        gpu::matrixUpdateWeightsBiasesADAM<<<grid, block, 0, stream>>>(sigma.getData(), epsalon.getData(), learning_rate.getData(), sum_delta_weights.getData(), sum_delta_weights_square.getData(), delta_weights.getData(), weights.getData(), intr_x, intr_y);
+    }
+
+    void updateBiasesADAMDense(NDArray<double, 1> sigma, NDArray<double, 1> epsalon, NDArray<double, 1> biases, NDArray<double, 1> learning_rate, NDArray<double, 1> sum_delta_biases, NDArray<double, 1> sum_delta_biases_squared, NDArray<double, 1> delta_biases, cudaStream_t stream)
+    {
+        unsigned intr_x;
+        dim3 grid, block;
+        intr_x = biases.getDimensions()[0];
+
+        block.x = (intr_x > 32) ? 32 : intr_x;
+
+        grid.x = ceil((float)intr_x / block.x);
+
+        gpu::matrixUpdateWeightsBiasesADAM<<<grid, block, 0, stream>>>(sigma.getData(), epsalon.getData(), learning_rate.getData(), sum_delta_biases.getData(), sum_delta_biases_squared.getData(), delta_biases.getData(), biases.getData(), intr_x, 1);
     }
 
     void getDifferentialWeights(NDArray<double, 1> input, NDArray<double, 1> delta_output, NDArray<double, 1> difference, NDArray<double, 1> delta_weights, NDArray<double, 1> delta_weights_intermediate, cudaStream_t stream)
@@ -1109,7 +1322,6 @@ public:
 
     void findDifference(NDArray<double, 1> Y_predict, NDArray<double, 1> Y_target, NDArray<double, 1> Difference, cudaStream_t stream)
     {
-
         unsigned intr_x, intr_y;
         dim3 grid, block;
 

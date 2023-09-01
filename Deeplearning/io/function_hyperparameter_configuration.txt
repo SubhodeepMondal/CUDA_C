@@ -1,1 +1,72 @@
 5 * sin(ptrA[i]) * sin(ptrA[i] - 0.45) * sin(ptrA[i] + 1.25); : 32 16 0.001 50000 4
+
+(base) subhodeep_pc@Subhodeep:/mnt/1274ABC1D58D91E1/Drive1/Codes/CUDA C/Deeplearning$ nvprof ./exe/DLearning
+==62286== NVPROF is profiling process 62286, command: ./exe/DLearning
+==62286== Profiling application: ./exe/DLearning
+==62286== Profiling result:
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+ GPU activities:   24.51%  1.76219s    650000  2.7110us  1.6640us  13.280us  gpu::matrixRollingSum(double*, double*, unsigned int, unsigned int, unsigned int)
+                   23.08%  1.65927s     50000  33.185us  32.479us  107.36us  gpu::print(double*)
+                   12.81%  920.93ms    350000  2.6310us  1.8880us  9.5990us  gpu::matrixFindMean(double*, unsigned int, unsigned int, unsigned int)
+                    8.83%  634.81ms    300000  2.1160us  1.7280us  9.2800us  gpu::matrixUpdateWeightsBiases(double*, double*, double*, unsigned int, unsigned int)
+                    4.57%  328.85ms    150000  2.1920us  2.0160us  8.3840us  gpu::matrixDifferentialInput(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    4.51%  323.96ms    150000  2.1590us  1.6000us  8.4480us  gpu::matrixDifferentialWeights(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    4.47%  321.24ms    150000  2.1410us  1.9830us  9.1520us  gpu::matrixDotMul(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    4.38%  314.62ms    150000  2.0970us  1.6310us  7.8400us  gpu::matrixDifferentialBiases(double*, double*, double*, unsigned int, unsigned int)
+                    3.27%  234.93ms     50000  4.6980us  4.5750us  13.248us  gpu::matrixSquaredError(double*, double*, unsigned int, unsigned int)
+                    3.01%  216.29ms    100000  2.1620us  1.6330us  9.0560us  gpu::matrixRelu(double*, double*, int, int)
+                    2.77%  199.27ms    100000  1.9920us  1.8870us  7.6160us  [CUDA memcpy DtoD]
+                    1.46%  105.10ms     50000  2.1020us  2.0160us  8.8000us  gpu::matrixDifference(double*, double*, double*, unsigned int, unsigned int)
+                    1.33%  95.663ms     50000  1.9130us  1.8550us  4.1920us  gpu::matrixLinear(double*, double*, int, int)
+                    1.00%  72.135ms    100012     721ns     640ns  8.3520us  [CUDA memcpy HtoD]
+      API calls:   38.99%  4.29446s    200012  21.471us  1.7330us  2.4285ms  cudaMemcpy
+                   35.97%  3.96219s   2200000  1.8000us  1.4930us  2.9911ms  cudaLaunchKernel
+                   23.29%  2.56522s     50000  51.304us  11.231us  1.9087ms  cudaDeviceSynchronize
+                    1.71%  187.79ms     50051  3.7510us     792ns  50.828ms  cudaMalloc
+                    0.04%  4.0354ms     50070      80ns      50ns  3.4970us  cudaGetDeviceCount
+                    0.00%  99.956us         1  99.956us  99.956us  99.956us  cuDeviceGetName
+                    0.00%  73.871us       101     731ns      50ns  37.140us  cuDeviceGetAttribute
+                    0.00%  18.104us         1  18.104us  18.104us  18.104us  cudaStreamCreate
+                    0.00%  3.7370us         1  3.7370us  3.7370us  3.7370us  cuDeviceGetPCIBusId
+                    0.00%  1.9430us         1  1.9430us  1.9430us  1.9430us  cudaSetDevice
+                    0.00%  1.0830us         3     361ns     110ns     792ns  cuDeviceGetCount
+                    0.00%     371ns         2     185ns      70ns     301ns  cuDeviceGet
+                    0.00%     211ns         1     211ns     211ns     211ns  cuDeviceTotalMem
+                    0.00%     161ns         1     161ns     161ns     161ns  cuModuleGetLoadingMode
+                    0.00%     110ns         1     110ns     110ns     110ns  cuDeviceGetUuid
+(base) subhodeep_pc@Subhodeep:/mnt/1274ABC1D58D91E1/Drive1/Codes/CUDA C/Deeplearning$ nvcc DLearning.cu -o exe/DLearning -lcudadevrt -rdc=true
+(base) subhodeep_pc@Subhodeep:/mnt/1274ABC1D58D91E1/Drive1/Codes/CUDA C/Deeplearning$ nvcc DLearning.cu -o exe/DLearning -lcudadevrt -rdc=true
+(base) subhodeep_pc@Subhodeep:/mnt/1274ABC1D58D91E1/Drive1/Codes/CUDA C/Deeplearning$ nvprof ./exe/DLearning
+==87778== NVPROF is profiling process 87778, command: ./exe/DLearning
+==87778== Profiling application: ./exe/DLearning
+==87778== Profiling result:
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+ GPU activities:   24.49%  1.76464s    650000  2.7140us  1.7920us  11.999us  gpu::matrixRollingSum(double*, double*, unsigned int, unsigned int, unsigned int)
+                   23.05%  1.66075s     50000  33.215us  32.479us  109.31us  gpu::print(double*)
+                   12.81%  923.45ms    350000  2.6380us  1.8240us  9.0240us  gpu::matrixFindMean(double*, unsigned int, unsigned int, unsigned int)
+                    8.84%  636.76ms    300000  2.1220us  1.6320us  9.4720us  gpu::matrixUpdateWeightsBiases(double*, double*, double*, unsigned int, unsigned int)
+                    4.58%  330.37ms    150000  2.2020us  1.8560us  8.9910us  gpu::matrixDifferentialInput(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    4.53%  326.36ms    150000  2.1750us  1.9200us  8.6400us  gpu::matrixDifferentialWeights(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    4.46%  321.68ms    150000  2.1440us  1.6960us  8.5440us  gpu::matrixDotMul(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    4.38%  315.58ms    150000  2.1030us  1.6310us  8.0000us  gpu::matrixDifferentialBiases(double*, double*, double*, unsigned int, unsigned int)
+                    3.26%  235.11ms     50000  4.7020us  4.6070us  13.216us  gpu::matrixSquaredError(double*, double*, unsigned int, unsigned int)
+                    3.03%  218.09ms    100000  2.1800us  1.5990us  8.7680us  gpu::matrixRelu(double*, double*, int, int)
+                    2.77%  199.93ms    100000  1.9990us  1.8870us  8.8960us  [CUDA memcpy DtoD]
+                    1.46%  105.40ms     50000  2.1080us  2.0470us  5.5360us  gpu::matrixDifference(double*, double*, double*, unsigned int, unsigned int)
+                    1.33%  95.850ms     50000  1.9160us  1.8550us  7.7760us  gpu::matrixLinear(double*, double*, int, int)
+                    1.00%  72.236ms    100012     722ns     639ns  7.9680us  [CUDA memcpy HtoD]
+      API calls:   40.23%  4.61742s    200012  23.085us  1.7430us  3.3401ms  cudaMemcpy
+                   34.21%  3.92584s   2200000  1.7840us  1.4930us  1.2215ms  cudaLaunchKernel
+                   25.01%  2.87018s     50000  57.403us  11.642us  3.2785ms  cudaDeviceSynchronize
+                    0.55%  62.983ms        52  1.2112ms     801ns  62.919ms  cudaMalloc
+                    0.00%  134.50us       101  1.3310us     100ns  52.838us  cuDeviceGetAttribute
+                    0.00%  55.414us         1  55.414us  55.414us  55.414us  cuDeviceGetName
+                    0.00%  22.822us        71     321ns      50ns  17.422us  cudaGetDeviceCount
+                    0.00%  14.517us         1  14.517us  14.517us  14.517us  cudaStreamCreate
+                    0.00%  3.8370us         1  3.8370us  3.8370us  3.8370us  cuDeviceGetPCIBusId
+                    0.00%  2.7340us         3     911ns     240ns  1.9830us  cuDeviceGetCount
+                    0.00%     952ns         1     952ns     952ns     952ns  cudaSetDevice
+                    0.00%     651ns         2     325ns     130ns     521ns  cuDeviceGet
+                    0.00%     411ns         1     411ns     411ns     411ns  cuDeviceTotalMem
+                    0.00%     281ns         1     281ns     281ns     281ns  cuModuleGetLoadingMode
+                    0.00%     201ns         1     201ns     201ns     201ns  cuDeviceGetUuid

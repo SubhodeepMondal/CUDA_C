@@ -71,7 +71,7 @@ void generatorFunctionSinWave(NDArray<double, 0> x, NDArray<double, 0> y)
     {
         angle = distribution(generator);
         ptrA[i] = angle * (3.14159 / 180.0f);
-        ptrB[i] = 5 * sin(ptrA[i]) * sin(ptrA[i] - 0.45) * sin(ptrA[i] + 1.25);//
+        ptrB[i] = 5 * sin(ptrA[i]) * sin(ptrA[i] - 0.45) * sin(ptrA[i] + 1.25) * sin(ptrA[i] - 2.05);//
     }
 }
 
@@ -102,10 +102,10 @@ int main()
     // y_train.printData();
 
     Model *model = new Sequential();
-    model->add(new Dense{32, input_shape, "relu", "Dense_1"});
-    model->add(new Dense{8, "relu", "Dense_2"});
+    model->add(new Dense{64, input_shape, "relu", "Dense_1"});
+    model->add(new Dense{64, "relu", "Dense_2"});
     model->add(new Dense{1, "linear", "Dense_3"});
-    model->compile("mean_squared_error", "sgd", "accuracy");
+    model->compile("mean_squared_error", "rmsprop", "accuracy");
     model->summary();
     model->fit(X_train, y_train, epochs, batch_size);
 }
