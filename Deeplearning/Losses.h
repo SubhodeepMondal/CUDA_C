@@ -44,7 +44,6 @@ class Mean_Squared_Error : public Loss
 
     void meanError(NDArray<double, 1> Difference, NDArray<double, 1> Cost, cudaStream_t stream)
     {
-
         if (!isSquaredErrorAlocated)
         {
             squared_error= NDArray<double,1>(Difference.getNoOfDimensions(), Difference.getDimensions());
@@ -60,4 +59,13 @@ public:
         math.findDifference(Y_predict, Y_target, Difference, stream);
         meanError(Difference, Cost, stream);
     }
+};
+
+class Catagorical_Cross_Entropy : public Loss
+{
+    public:
+        void findLoss(NDArray<double, 1>Y_predict, NDArray<double, 1>Y_target, NDArray<double, 1>Difference, NDArray<double, 1> Cost, cudaStream_t stream) override
+        {
+            math.crossEntropy(Y_predict, Y_target, Difference, Cost, stream);    
+        }
 };

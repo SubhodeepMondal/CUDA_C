@@ -29,13 +29,15 @@ class Model
 {
 
 protected:
-    NDArray<double, 1> input_data;
+    unsigned input_layer_count, output_layer_cout;
+    NDArray<double, 1> X_input, y_target;
+    NDArray<unsigned, 0> input_shape, output_shape;
     Layer *input, *output;
     std::string model_type;
-    unsigned layer_count, max_feature, max_neuron;
     Optimizer *optimizer;
     Loss *loss;
     Metric *metric;
+    struct_Models st_models;
     struct_Loss st_loss;
     struct_Optimizer st_optimizer;
     search_parameter search;
@@ -43,23 +45,28 @@ protected:
 public:
     Model(std::string str) : input(NULL), output(NULL)
     {
-        model_type = str;
-        layer_count = max_feature = max_neuron = 0;
+        switch (st_models.model[str])
+        {
+        case this->st_models.sequential:
+        {
+            model_type = str;
+            input_layer_count = output_layer_cout = 1;
+            break;
+        }
+
+        default:
+            break;
+        }
     }
 
-    virtual void add(Layer *layers)
-    {
-        std::cout << " in virtual add\n";
-    }
+    virtual void add(Layer *layers) {}
 
     void getModelType()
     {
         std::cout << model_type << "\n";
     }
 
-    virtual void compile(std::string loss, std::string optimizer, std::string metrics)
-    {
-    }
+    virtual void compile(std::string loss, std::string optimizer, std::string metrics) {}
 
     void summary()
     {
@@ -71,7 +78,7 @@ public:
 
     void fit(NDArray<double, 0> X, NDArray<double, 0> Y, int epochs, int batch_size)
     {
-        unsigned no_of_sample, no_of_input_feature, batch_index;
+        unsigned no_of_sample, no_of_input_feature, batch_index, data_range, epoch_range, mod;
         Layer *ptr;
         std::random_device generator;
         std::uniform_int_distribution<int> distribution;
@@ -82,8 +89,14 @@ public:
 
         no_of_input_feature = X.getDimensions()[0];
         no_of_sample = X.getDimensions()[1];
+        data_range = (unsigned)no_of_sample / 4;
+        epoch_range = epochs / 4;
 
-        distribution = std::uniform_int_distribution<int>(0, no_of_sample);
+        X_input = NDArray<double, 1>(2, no_of_input_feature, data_range);
+        y_target = NDArray<double, 1>(Y.getNoOfDimensions(), data_range);
+        Cost = NDArray<double, 1>(2, 1, epochs);
+
+        distribution = std::uniform_int_distribution<int>(0, data_range);
 
         cudaStreamCreate(&stream);
 
@@ -93,25 +106,34 @@ public:
         search.search_param = "prepare_training";
         ptr->searchDFS(search);
 
-        Cost = NDArray<double, 1>(2,1,epochs);
+        // std::cout << "Parameters before training:\n";
+        // search.search_param = "print_parameters";
+        // ptr->searchDFS(search);
 
         for (int i = 0; i < epochs; i++)
         {
-            unsigned no_of_data, index;
+
+            unsigned index;
             batch_index = distribution(generator);
-            batch_index = (no_of_sample - batch_index) > batch_size ? batch_index : (no_of_sample - batch_size);
+            batch_index = (data_range - batch_index) > batch_size ? batch_index : (data_range - batch_size);
 
             // std::cout << "Epoch: " << i+1 << ", batch index: " << batch_index << " " ;
+            mod = i % epoch_range;
+            if (!mod)
+            {
+                X_input.initData(X.getData() + mod * data_range);
+                y_target.initData(Y.getData() + mod * data_range);
+            }
 
             ptr = input;
-            no_of_data = no_of_input_feature * batch_size;
+            // no_of_data = no_of_input_feature * batch_size;
             index = batch_index * no_of_input_feature;
-            ptr->initilizeInput(0, no_of_data, X.getData() + index);
+            ptr->initilizeInputGPU(X_input.getData() + index);
 
             ptr = output;
-            no_of_data = Y.getDimensions()[0] * batch_size;
+            // no_of_data = Y.getDimensions()[0] * batch_size;
             index = batch_index * Y.getDimensions()[0];
-            ptr->initilizeTarget(0, no_of_data, Y.getData() + index);
+            ptr->initilizeTarget(y_target.getData() + index);
 
             // ptr = input;
             // ptr->printInputIntermediate();
@@ -124,22 +146,68 @@ public:
             ptr->searchDFS(search);
 
             ptr = output;
-            Cost.initPartialData(i,1, ptr->findCost(loss)); 
+            Cost.initPartialData(i, 1, ptr->findCost(loss));
 
             search.search_param = "backward_propagation";
             ptr->searchBFS(search);
 
-            // ptr = input;
-            // search.search_param = "print_parameters";
-            // ptr->searchDFS(search);
 
-            // cudaStreamSynchronize(stream);
+            // std::cout <<"___________________________________________________________________________________________________________________________________\n";
+            // std:: cout << "Epoch: " << i << "\n";
+            // ptr = output;
+            // ptr->printOutputGPU();
+            // ptr->printTarget();
+            // ptr->printDifference();
         }
 
-        Cost.printData();
-        // ptr = input;
-        // search.search_param = "commit_weights_biases";
+        // Cost.printData();
+        Cost.destroy();
+
+        ptr = input;
+        search.search_param = "commit_weights_biases";
+        ptr->searchDFS(search);
+
+        // std::cout << "Parameters after training:\n";
+        // search.search_param = "print_parameters";
         // ptr->searchDFS(search);
+        
+    }
+
+    NDArray<double, 0> predict(NDArray<double, 0> X)
+    {
+        unsigned i, no_of_input_features, no_of_dimensions, no_of_instances, prediction_dimension;
+
+        NDArray<double, 0> X_input, y_predict;
+        Layer *ptr;
+
+        prediction_dimension = output->getNoOfNeuron();
+        no_of_dimensions = X.getNoOfDimensions();
+        no_of_instances = X.getDimensions()[no_of_dimensions-1];
+        no_of_input_features = 0;
+
+        for (i = 0; i < no_of_dimensions - 1; i++)
+        {
+            no_of_input_features += X.getDimensions()[i];
+        }
+
+        X_input = NDArray<double, 0>(no_of_dimensions - 1, X.getDimensions());
+        y_predict = NDArray<double, 0>(2, prediction_dimension, X.getDimensions()[no_of_dimensions - 1]);
+
+        for (i = 0; i < no_of_instances; i++)
+        {
+            X_input.initData(X.getData()[i * no_of_input_features]);
+            // X_input.printData();
+
+            ptr = input;
+            ptr->initilizeInputData(X_input);
+            search.search_param = "predict";
+            ptr->searchDFS(search);
+
+            ptr = output;
+            y_predict.initPartialData(i, y_predict.getDimensions()[0], ptr->getOutputData());
+        }
+
+        return y_predict;
     }
 };
 
@@ -184,13 +252,5 @@ public:
         default:
             break;
         }
-
-        ptr = output;
-        search.search_param = "set_input_pointer";
-        ptr->searchBFS(search);
-
-        // ptr = input;
-        // search.search_param = "print_parameters";
-        // ptr->searchDFS(search);
     }
 };

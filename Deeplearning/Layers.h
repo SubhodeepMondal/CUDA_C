@@ -1,4 +1,5 @@
 #pragma ONCE
+#include "Forward_Propagation.h"
 
 typedef struct struct_Layers
 {
@@ -26,9 +27,10 @@ typedef struct search_parameter
     std::string String;
     unsigned Integer;
     double Double;
-    cudaStream_t cuda_Stream;
     int *int_Ptr;
     double *double_Ptr;
+    cudaStream_t cuda_Stream;
+    NDArray<double, 0> X, Y;
 } search_parameter;
 
 typedef struct search_Flags
@@ -61,25 +63,25 @@ typedef struct search_Flags
 
     search_Flags()
     {
-        search_flags["compile"] = compile;
-        search_flags["train"] = train;
-        search_flags["predict"] = predict;
-        search_flags["summary"] = summary;
-        search_flags["prepare_training"] = prepare_training;
-        search_flags["initilize_weights_biases"] = initilize_weights_biases;
-        search_flags["initilize_weights_biases_gpu"] = initilize_weights_biases_gpu;
-        search_flags["forward_propagation"] = forward_propagation;
-        search_flags["backward_propagation"] = backward_propagation;
-        search_flags["initilize_optimizer"] = initilize_optimizer;
-        search_flags["initilize_output"] = initilize_output;
-        search_flags["initilize_output_gpu"] = initilize_output_gpu;
-        search_flags["initilize_input_intermidiate"] = initilize_input_intermidiate;
-        search_flags["initilize_output_intermidiate"] = initilize_output_intermidiate;
-        search_flags["print_parameters"] = print_parameters;
-        search_flags["update_stream"] = update_stream;
-        search_flags["set_input_pointer"] = set_input_pointer;
-        search_flags["print_pointer"] = print_pointer;
-        search_flags["commit_weights_biases"] = commit_weights_biases;
+        search_flags["compile"]                         = compile;
+        search_flags["train"]                           = train;
+        search_flags["predict"]                         = predict;
+        search_flags["summary"]                         = summary;
+        search_flags["prepare_training"]                = prepare_training;
+        search_flags["initilize_weights_biases"]        = initilize_weights_biases;
+        search_flags["initilize_weights_biases_gpu"]    = initilize_weights_biases_gpu;
+        search_flags["forward_propagation"]             = forward_propagation;
+        search_flags["backward_propagation"]            = backward_propagation;
+        search_flags["initilize_optimizer"]             = initilize_optimizer;
+        search_flags["initilize_output"]                = initilize_output;
+        search_flags["initilize_output_gpu"]            = initilize_output_gpu;
+        search_flags["initilize_input_intermidiate"]    = initilize_input_intermidiate;
+        search_flags["initilize_output_intermidiate"]   = initilize_output_intermidiate;
+        search_flags["print_parameters"]                = print_parameters;
+        search_flags["update_stream"]                   = update_stream;
+        search_flags["set_input_pointer"]               = set_input_pointer;
+        search_flags["print_pointer"]                   = print_pointer;
+        search_flags["commit_weights_biases"]           = commit_weights_biases;
     }
 } search_Flags;
 
@@ -181,6 +183,8 @@ public:
 
     virtual void forwardPropagation() {}
 
+    // virtual void predict() {}
+
     virtual void LayerProperties() {}
 
     virtual void searchDFS(search_parameter search) {}
@@ -189,15 +193,21 @@ public:
 
     virtual unsigned getNoOfNeuron() { return 0; }
 
+    virtual NDArray<double, 0> getOutput() { return 0; }
+
+    virtual double *getOutputData() { return NULL; }
+
     virtual double *getOutputDataGPU() { return NULL; }
 
     virtual NDArray<double, 1> getDifferencefromPrevious() { return 0; }
 
     virtual NDArray<double, 1> getDifference() { return 0; }
 
-    virtual void initilizeInput(unsigned, unsigned no_of_data, double *ptr) {}
+    virtual void initilizeInputData(NDArray<double, 0> input){};
 
-    virtual void initilizeTarget(unsigned index, unsigned no_of_data, double *ptr) {}
+    virtual void initilizeInputGPU(double *ptr) {}
+
+    virtual void initilizeTarget(double *ptr) {}
 
     virtual void printInput() {}
 
@@ -217,28 +227,25 @@ public:
 
     virtual void printTarget() {}
 
-    virtual void printWeight_Biases() {}
+    virtual void printWeightes() {}
 
     virtual void printWeightGPU() {}
 
-    //    virtual unsigned getLayerUnit() {}
+    virtual void printBiases() {}
 
-    //    virtual unsigned getNoOfDimension() {}
+    virtual void printBiasesGPU() {}
 
-    //    virtual unsigned *getDimensions() {}
+    virtual void printOutputGPU() {}
 
-    //    virtual std::string getActivationFunction() {}
-
-    //    virtual unsigned updateLayerUnit(unsigned unit) {}
+    virtual void printDifference() {}
 };
 
-class Dense : public Layer
+class Dense : public Layer, DenseForward
 {
 protected:
     Activation *activation;
     struct_Activations acti_func;
     std::string dense_activation; // dense activation function
-    // NDArray<unsigned, 0> input; // input dimension for dense layer
     NDArray<double, 0> input;
     NDArray<double, 0> weights;
     NDArray<double, 0> biases;
@@ -255,7 +262,6 @@ protected:
     NDArray<double, 1> target;
     NDArray<double, 1> difference;
     NDArray<double, 1> cost = NDArray<double, 1>(1, 1);
-    NDMath math;
     cudaStream_t stream;
     Optimizer *optimizer;
     struct_Optimizer optimizers;
@@ -263,20 +269,6 @@ protected:
     unsigned dense_unit, batch_size, isInputInitilized, isOptimizerUpdated = 0, isTrainable, isCUDAStreamUpdated = 0; // no of neuron of dense layer
     std::string layer_name, layer_optimizer;
     search_Flags Flag;
-
-    unsigned getInputDimension()
-    {
-        Layer_ptr *ptr = in_vertices;
-        unsigned count = 0;
-
-        while (ptr)
-        {
-            count += ptr->layer->getNoOfNeuron();
-            ptr = ptr->next;
-        }
-
-        return count;
-    }
 
     Optimizer *getOptimizerfromPrevious()
     {
@@ -309,16 +301,50 @@ protected:
             return 0;
     }
 
+    void initilizeInput()
+    {
+        Layer_ptr *ptr = in_vertices;
+        NDArray<double, 0> input_dimension;
+        if (!isInputInitilized)
+        {
+            if (ptr)
+            {
+                input_dimension = ptr->layer->getOutput();
+                input = NDArray<double, 0>(input_dimension.getNoOfDimensions(), input_dimension.getDimensions(), 0);
+                input.initPreinitilizedData(input_dimension.getData());
+                isInputInitilized = 1;
+            }
+        }
+    }
+
+    void initilizeInputIntermediate(unsigned batch_size)
+    {
+        unsigned dims = input.getNoOfDimensions() + 1;
+        unsigned i;
+        unsigned *a = new unsigned[dims];
+
+        Layer_ptr *ptr = in_vertices;
+
+        for (i = 0; i < dims - 1; i++)
+            a[i] = input.getDimensions()[i];
+        a[i] = batch_size;
+
+        input_gpu = NDArray<double, 1>(dims, a, 0);
+        if (ptr)
+        {
+            input_gpu.initPreinitilizedData(ptr->layer->getOutputDataGPU());
+        }
+    }
+
     void initilizeWeightsBiases()
     {
         weights = NDArray<double, 0>(2, dense_unit, input.getDimensions()[0]);
         biases = NDArray<double, 0>(1, dense_unit);
         weights.initRandData(-1, 1);
         biases.initRandData(-1, 1);
-        // printWeight_Biases();
     }
 
-    void initilizeWeightsBiasesGPU(unsigned batch_size)
+    void initilizeWeightsBiasesIntermediate(unsigned batch_size)
     {
         unsigned no_of_features;
         no_of_features = input.getDimensions()[0];
@@ -336,9 +362,12 @@ protected:
         output = NDArray<double, 0>(1, dense_unit);
     }
 
-    void initilizeOutputGPU(unsigned batch_size)
+    void initilizeOutputIntermediate(unsigned batch_size)
     {
-        target = NDArray<double, 1>(2, dense_unit, batch_size);
+        unsigned a[2];
+        a[0] = dense_unit;
+        a[1] = batch_size;
+        target = NDArray<double, 1>(2, a, 0);
         output_gpu = NDArray<double, 1>(2, dense_unit, batch_size);
         difference = NDArray<double, 1>(2, dense_unit, batch_size);
         delta_activation = NDArray<double, 1>(2, dense_unit, batch_size);
@@ -351,17 +380,22 @@ protected:
         {
         case this->acti_func.relu:
         {
-            activation = new relu;
+            activation = new Relu_Activation;
             break;
         }
         case this->acti_func.sigmoid:
         {
-            activation = new sigmoid;
+            activation = new Sigmoid_Activation;
             break;
         }
         case this->acti_func.linear:
         {
-            activation = new linear;
+            activation = new Linear_Activation;
+            break;
+        }
+        case this->acti_func.softmax:
+        {
+            activation = new Softmax_Activation;
             break;
         }
         default:
@@ -377,27 +411,10 @@ protected:
         this->optimizer = optimizer;
     }
 
-    void initilizeInputIntermidiate(unsigned batch_size)
+    void commitWeightsBiases()
     {
-        unsigned dims = input.getNoOfDimensions() + 1;
-        unsigned i;
-        unsigned *a = new unsigned[dims];
-
-        Layer_ptr *ptr = in_vertices;
-
-        for (i = 0; i < dims - 1; i++)
-            a[i] = input.getDimensions()[i];
-        a[i] = batch_size;
-
-        if (ptr)
-        {
-            input_gpu = NDArray<double, 1>(dims, a, 0);
-            input_gpu.initPreinitilizedData(ptr->layer->getOutputDataGPU());
-        }
-        else
-        {
-            input_gpu = NDArray<double, 1>(dims, a);
-        }
+        weights.initData(weights_gpu);
+        biases.initData(biases_gpu);
     }
 
 public:
@@ -438,6 +455,12 @@ public:
         return input.getDimensions();
     }
 
+    NDArray<double, 0> getOutput() override
+    {
+
+        return output;
+    }
+
     double *getOutputDataGPU()
     {
         return output_gpu.getData();
@@ -463,12 +486,9 @@ public:
         return optimizer;
     }
 
-    unsigned updateLayerUnit(unsigned unit)
+    double *getOutputData()
     {
-        unsigned *arr = new unsigned;
-        arr[0] = unit;
-        input = NDArray<double, 0>(1, arr, 0);
-        return 0;
+        return output.getData();
     }
 
     void updateStream(cudaStream_t stream)
@@ -544,12 +564,6 @@ public:
         }
     }
 
-    void updateInputPointer(Layer_ptr *ptr)
-    {
-        if (ptr)
-            input.initPreinitilizedData((ptr->layer)->getOutputDataGPU());
-    }
-
     void searchDFS(search_parameter search)
     {
         Layer_ptr *ptr = out_vertices;
@@ -563,11 +577,7 @@ public:
         }
         case this->Flag.compile:
         {
-            unsigned layer_unit = getInputDimension();
-
-            if (layer_unit)
-                updateLayerUnit(layer_unit);
-
+            initilizeInput();
             initilizeWeightsBiases();
             initilizeOutput();
             layer_optimizer = search.String;
@@ -576,22 +586,23 @@ public:
         case this->Flag.prepare_training:
         {
             updateStream(search.cuda_Stream);
-            initilizeOutputGPU(search.Integer);
-            initilizeInputIntermidiate(search.Integer);
-            initilizeWeightsBiasesGPU(search.Integer);
+            initilizeOutputIntermediate(search.Integer);
+            initilizeInputIntermediate(search.Integer);
+            initilizeWeightsBiasesIntermediate(search.Integer);
             updateOptimizer(layer_optimizer);
 
             break;
         }
-
         case this->Flag.initilize_weights_biases_gpu:
         {
-            initilizeWeightsBiasesGPU(search.Integer);
+            initilizeWeightsBiasesIntermediate(search.Integer);
             break;
         }
         case this->Flag.forward_propagation:
         {
-            forwardPropagation();
+            fit(input_gpu, weights_gpu, biases_gpu, output_gpu, stream);
+            activation->activate(output_gpu, delta_activation, stream);
+            // forwardPropagation();
             break;
         }
         case this->Flag.update_stream:
@@ -601,12 +612,12 @@ public:
         }
         case this->Flag.initilize_input_intermidiate:
         {
-            initilizeInputIntermidiate(search.Integer);
+            initilizeInputIntermediate(search.Integer);
             break;
         }
         case this->Flag.initilize_output_intermidiate:
         {
-            initilizeOutputGPU(search.Integer);
+            initilizeOutputIntermediate(search.Integer);
             break;
         }
         case this->Flag.print_pointer:
@@ -617,23 +628,28 @@ public:
         }
         case this->Flag.print_parameters:
         {
-            // printInput();
-            // printWeight_Biases();
-            // printWeightGPU();
-            printOutputGPU();
+            printWeightGPU();
+            printBiasesGPU();
+            printWeightes();
+            printBiases();
+            break;
         }
         case this->Flag.predict:
         {
+
+            predict(input, weights, biases, output);
+            activation->activate(output);
+            break;
         }
         case this->Flag.commit_weights_biases:
         {
+            commitWeightsBiases();
+            break;
         }
         }
 
         while (ptr)
         {
-            // std::cout << "In while.\n";
-
             ptr->layer->searchDFS(search);
             ptr = ptr->next;
         }
@@ -647,17 +663,8 @@ public:
         {
         case this->Flag.compile:
         {
-            unsigned Layer_Unit = getInputDimension();
-            if (Layer_Unit)
-            {
-                updateLayerUnit(Layer_Unit);
-            }
+            initilizeInput();
             // input.printData();
-            break;
-        }
-        case this->Flag.set_input_pointer:
-        {
-            updateInputPointer(ptr);
             break;
         }
         case this->Flag.backward_propagation:
@@ -680,14 +687,20 @@ public:
         }
     }
 
-    void initilizeInput(unsigned index, unsigned no_of_data, double *ptr) override
+    void initilizeInputData(NDArray<double, 0> X_input)
     {
-        input_gpu.initPartialData(index, no_of_data, ptr);
+        input.initData(X_input);
     }
 
-    void initilizeTarget(unsigned index, unsigned no_of_data, double *ptr) override
+    void initilizeInputGPU(double *ptr) override
     {
-        target.initPartialData(index, no_of_data, ptr);
+        input_gpu.initPreinitilizedData(ptr);
+    }
+
+    void initilizeTarget(double *ptr) override
+    {
+        target.initPreinitilizedData(ptr);
+        // target.initPartialData(index, no_of_data, ptr);
     }
 
     void printInput()
@@ -702,24 +715,26 @@ public:
         input_gpu.printData();
     }
 
-    void printWeight_Biases()
+    void printWeightes()
     {
         std::cout << layer_name << ": weight data: \n";
         weights.printData();
-        std::cout << layer_name << ": biases data: \n";
-        biases.printData();
     }
 
     void printWeightGPU()
     {
-
         std::cout << layer_name << ": weight gpu data: \n";
         weights_gpu.printData();
     }
 
+    void printBiases()
+    {
+        std::cout << layer_name << ": biases data: \n";
+        biases.printData();
+    }
+
     void printBiasesGPU()
     {
-
         std::cout << layer_name << ": biases gpu data: \n";
         biases_gpu.printData();
     }
@@ -777,14 +792,8 @@ public:
 
     void forwardPropagation()
     {
-        math.matrixDotMultiplication(input_gpu, weights_gpu, biases_gpu, output_gpu, stream);
-        activation->activate(output_gpu, delta_activation, stream);
-
-        // std::cout << "Forward propagation:\n";
-        // printInputIntermediate();
-        // printWeightGPU();
-        // printBiasesGPU();
-        // printOutputGPU();
+        // fit(input_gpu, weights_gpu, biases_gpu, output_gpu, stream);
+        // activation->activate(output_gpu, delta_activation, stream);
     }
 
     double *findCost(Loss *loss) override
@@ -811,5 +820,4 @@ public:
         // printBiasesGPU();
         // std::cout << "\n\n";
     }
-
 };

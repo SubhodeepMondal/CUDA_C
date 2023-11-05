@@ -9,9 +9,6 @@
 
 namespace gpu
 {
-
-    // __device__ double learning_rate;
-
     __global__ void printData(double *a, unsigned x, unsigned y, unsigned z)
     {
         int i, j, k;
@@ -343,7 +340,7 @@ namespace gpu
 
     __global__ void matrixLinear(double *a, double *d_a, int x, int y)
     {
-        // x: neuron, y: feature. m: max_neuron.
+        // x: neuron, y: batch.
         unsigned id_x, id_y, lin_idx;
         id_x = threadIdx.x + (blockDim.x * blockIdx.x);
         id_y = threadIdx.y + (blockDim.y * blockIdx.y);
@@ -353,6 +350,39 @@ namespace gpu
         {
             d_a[lin_idx] = 1;
         }
+    }
+
+    __global__ void matrixSoftmax(double *a, double *softmax_sum, double *d_a, unsigned x, unsigned y)
+    {
+        unsigned i, id_x, id_y, lin_idx;
+        id_x = threadIdx.x + (blockDim.x * blockIdx.x);
+        id_y = threadIdx.y + (blockDim.y * blockDim.y);
+        lin_idx = id_x + id_y * x;
+
+
+        // Softmax calculation.
+        if (id_x < x && id_y < y)
+            a[lin_idx] = exp(a[lin_idx]);
+
+        __syncthreads();
+
+        if (!id_x)
+        {
+            softmax_sum[id_y] = 0;
+            for (i = id_y; i < x; i++)
+            {
+                softmax_sum[id_y] += a[i];
+            }
+        }
+        __syncthreads();
+
+        a[lin_idx] = a[lin_idx] / softmax_sum[id_y];
+        __syncthreads();
+
+        // Softmax derivative calculation.
+        d_a[lin_idx] = 0.0;
+        for(i=0; i < x; i++)
+            d_a[lin_idx] += a[lin_idx] * ((i == id_x) - a[i + id_y * x]);
     }
 
     __global__ void matrixSquaredError(double *a, double *b, unsigned x, unsigned y)
@@ -392,6 +422,22 @@ namespace gpu
         }
     }
 
+    __global__ void matrixCrossEntropy(double *input_A, double* input_B, double* output_C, unsigned x, unsigned y)
+    {
+        unsigned id_x, id_y, lin_idx;
+        id_x = threadIdx.x + (blockDim.x * blockIdx.x);
+        id_y = threadIdx.y + (blockDim.y * blockIdx.y);
+
+        lin_idx = id_x + id_y * x;
+
+        // Calculating only difference
+
+        if(id_x < x && id_y < y)
+        {
+            output_C[lin_idx] = input_A[lin_idx] - input_B[lin_idx];
+        }
+    }
+
     __global__ void matrixUpdateWeightsBiases(double *weights_biases, double *learning_rate, double *d_weights_biases, unsigned a_m, unsigned a_n)
     {
         unsigned indx_x, indx_y, index;
@@ -406,7 +452,7 @@ namespace gpu
         }
     }
 
-    __global__ void matrixUpdateWeightsBiasesSGDmomentum(double* sigma, double *learning_rate, double* sum_d_weights_biases, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
+    __global__ void matrixUpdateWeightsBiasesSGDmomentum(double *sigma, double *learning_rate, double *sum_d_weights_biases, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
     {
         unsigned indx_x, indx_y, index;
         // double weighted_delta_weights_biases;
@@ -423,7 +469,7 @@ namespace gpu
         }
     }
 
-    __global__ void matrixUpdateWeightsBiasesRMSprop(double* sigma, double* epsalon, double *learning_rate, double* sum_d_weights_biases, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
+    __global__ void matrixUpdateWeightsBiasesRMSprop(double *sigma, double *epsalon, double *learning_rate, double *sum_d_weights_biases, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
     {
         unsigned indx_x, indx_y, index;
         double squared_delta_weights_biases;
@@ -438,11 +484,11 @@ namespace gpu
             squared_delta_weights_biases = pow(d_weights_biases[index], 2);
 
             sum_d_weights_biases[index] = (*sigma) * sum_d_weights_biases[index] + (1 - (*sigma)) * squared_delta_weights_biases;
-            weights_biases[index] -= learning_rate[index] * d_weights_biases[index] / (sqrt( sum_d_weights_biases[index]) + (*epsalon)); //  ;
+            weights_biases[index] -= learning_rate[index] * d_weights_biases[index] / (sqrt(sum_d_weights_biases[index]) + (*epsalon)); //  ;
         }
     }
 
-    __global__ void matrixUpdateWeightsBiasesADAM(double* sigma, double* epsalon, double *learning_rate, double* sum_d_weights_biases, double* sum_d_weights_biases_squared, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
+    __global__ void matrixUpdateWeightsBiasesADAM(double *sigma, double *epsalon, double *learning_rate, double *sum_d_weights_biases, double *sum_d_weights_biases_squared, double *d_weights_biases, double *weights_biases, unsigned a_m, unsigned a_n)
     {
         unsigned indx_x, indx_y, index;
         double squared_delta_weights_biases;
@@ -459,7 +505,7 @@ namespace gpu
             sum_d_weights_biases[index] = (*sigma) * sum_d_weights_biases[index] + (1 - (*sigma)) * d_weights_biases[index];
             sum_d_weights_biases_squared[index] = (*sigma) * sum_d_weights_biases_squared[index] + (1 - (*sigma)) * squared_delta_weights_biases;
 
-            weights_biases[index] -= learning_rate[index] * sum_d_weights_biases[index] / (sqrt( sum_d_weights_biases_squared[index]) + (*epsalon)); //  ;
+            weights_biases[index] -= learning_rate[index] * sum_d_weights_biases[index] / (sqrt(sum_d_weights_biases_squared[index]) + (*epsalon)); //  ;
         }
     }
 
@@ -502,6 +548,7 @@ namespace gpu
             learning_rate[index] = (learning_rate[index] < 0.001) ? 0.001 : learning_rate[index];
         }
     }
+
 }
 
 namespace cpu
@@ -542,6 +589,69 @@ namespace cpu
         else
             std::cout << "The arrays are not a match." << std::endl;
     }
+
+    void matrixDotMul(double *A, double *B, double *C, double *D, unsigned a_m, unsigned a_n)
+    {
+        unsigned i, j, indx_W; // indx_A: index input A, indx_B: index weights B
+        double val;
+
+        for (i = 0; i < a_m; i++)
+        {
+            val = 0;
+            for (j = 0; j < a_n; j++)
+            {
+                indx_W = i + j * a_m;
+                val += A[j] * B[indx_W];
+            }
+            val += C[i];
+            D[i] = val;
+            // std::cout << D[i] << ", ";
+        }
+        // std::cout << "\n";
+    }
+
+    void matrixRelu(double *A, unsigned a_m)
+    {
+        unsigned i;
+        for (i = 0; i < a_m; i++)
+            if (A[i] < 0)
+                A[i] = 0;
+    }
+
+    void matrixSigmoid(double *A, unsigned a_m)
+    {
+        unsigned i;
+        for (i = 0; i < a_m; i++)
+            A[i] = 1.0f / (1 + exp(-1 * A[i]));
+    }
+
+    void getMean(double *A, double *B, unsigned nElem)
+    {
+        double sum = 0.0;
+        for (int i = 0; i < nElem; i++)
+            sum += A[i];
+
+        *B = sum / nElem;
+    }
+
+    void getDifference(double *A, double *B, double *C, unsigned nElem)
+    {
+        for (unsigned i = 0; i < nElem; i++)
+            C[i] = A[i] - B[i];
+    }
+
+    void getSquare(double *A, double *B, unsigned nElem)
+    {
+        for (unsigned i = 0; i < nElem; i++)
+            B[i] = A[i] * A[i];
+    }
+
+    void getSquareRoot(double *A, double *B, unsigned nElem)
+    {
+        for (unsigned i = 0; i < nElem; i++)
+            B[i] = sqrt(A[i]);
+    }
+
 }
 
 template <class T, int typeFlag>
@@ -751,7 +861,22 @@ public:
 
     void initData(NDArray<double, 1> data)
     {
-        cudaMemcpy(this->data, data.getData(), sizeof(T) * nElem, cudaMemcpyDeviceToDevice);
+        if (type)
+            cudaMemcpy(this->data, data.getData(), sizeof(T) * nElem, cudaMemcpyDeviceToDevice);
+        else
+            cudaMemcpy(this->data, data.getData(), sizeof(T) * nElem, cudaMemcpyDeviceToHost);
+    }
+
+    void initData(NDArray<double, 0> incData)
+    {
+        if (type)
+            cudaMemcpy(this->data, incData.getData(), sizeof(T) * nElem, cudaMemcpyHostToDevice);
+        else
+        {
+            T *ptr = incData.getData();
+            for (int i = 0; i < nElem; i++)
+                this->data[i] = ptr[i];
+        }
     }
 
     void initPartialData(unsigned index, unsigned n, T *data_source)
@@ -773,12 +898,9 @@ public:
             data[i] = distribution(generator);
     }
 
-    void initPreinitilizedData(double *Data)
+    void initPreinitilizedData(T *Data)
     {
-        if (!isInitilized)
-            this->data = Data;
-        else
-            std::cout << "This NDArray is Initilized, can't initiate with different data!\n";
+        this->data = Data;
     }
 
     void copyData(T *data)
@@ -801,11 +923,8 @@ public:
 
 class NDMath
 {
-    NDArray<double, 1> *nd_ptr;
-
     NDArray<double, 1> intermediate_output;
-    unsigned isIntermediateOutputUpdated = 0, isSymbolCopied = 0;
-    // cudaStream_t stream;
+    unsigned isIntermediateOutputUpdated = 0;
 
 public:
     NDArray<double, 0> multiplication(NDArray<double, 0> a, NDArray<double, 0> b, int gpu = 1)
@@ -876,6 +995,26 @@ public:
         return c;
     }
 
+    void matrixDotMultiplication(NDArray<double, 0> input, NDArray<double, 0> weights, NDArray<double, 0> biases, NDArray<double, 0> output)
+    {
+        unsigned intr_x, intr_y;
+
+        intr_x = weights.getDimensions()[0];
+        intr_y = weights.getDimensions()[1];
+
+        // std::cout << "Input: \n";
+        // input.printData();
+        // std::cout << "Weights: \n";
+        // weights.printData();
+        // std::cout << "Biases: \n";
+        // biases.printData();
+
+        cpu::matrixDotMul(input.getData(), weights.getData(), biases.getData(), output.getData(), intr_x, intr_y);
+
+        // std::cout << "Output:\n";
+        // output.printData();
+    }
+
     void matrixDotMultiplication(NDArray<double, 1> input, NDArray<double, 1> weights, NDArray<double, 1> biases, NDArray<double, 1> output, cudaStream_t stream)
     {
         unsigned intr_x, intr_y, intr_z;
@@ -899,25 +1038,12 @@ public:
         grid.y = ceil((float)intr_y / block.y);
         grid.z = ceil((float)intr_z / block.z);
 
-        // std::cout << "\nInput:\n";
-        // input.printData();
-        // std::cout << "Weights:" << weights.getData() << "\n";
-        // weights.printData();
-        // std::cout << "Biases:\n";
-        // biases.printData();
-
         gpu::matrixDotMul<<<grid, block, 0, stream>>>(input.getData(), weights.getData(), biases.getData(), intermediate_output.getData(), intr_x, intr_y, intr_z - 1);
 
         block.z = 1;
         grid.z = 1;
 
         gpu::matrixRollingSum<<<grid, block, 0, stream>>>(intermediate_output.getData(), output.getData(), intr_x, intr_y, intr_z);
-
-        // std::cout << "Intermediate_output:\n";
-        // intermediate_output.printData();
-
-        // std::cout << "Output:\n";
-        // output.printData();
     }
 
     void updateLearningRateWeightsAdagrad(NDArray<double, 1> epsalon, NDArray<double, 1> sum_delta_weights, NDArray<double, 1> delta_weights, NDArray<double, 1> learning_rate_weights, cudaStream_t stream)
@@ -1260,6 +1386,15 @@ public:
         gpu::matrixRelu<<<grid, block, 0, stream>>>(input.getData(), d_activation.getData(), intr_x, intr_y);
     }
 
+    void reluActivation(NDArray<double, 0> input)
+    {
+        unsigned intr_x;
+
+        intr_x = input.getDimensions()[0];
+
+        cpu::matrixRelu(input.getData(), intr_x);
+    }
+
     void sigmoidActivation(NDArray<double, 1> input, NDArray<double, 1> d_activation, cudaStream_t stream)
     {
         int intr_x, intr_y;
@@ -1273,6 +1408,13 @@ public:
         grid.y = ceil((float)(intr_y + 1) / block.y);
 
         gpu::matrixSigmoid<<<grid, block, 0, stream>>>(input.getData(), d_activation.getData(), intr_x, intr_y);
+    }
+
+    void sigmoidActivation(NDArray<double, 0> input)
+    {
+        unsigned intr_x;
+        intr_x = input.getDimensions()[0];
+        cpu::matrixSigmoid(input.getData(), intr_x);
     }
 
     void linearActivation(NDArray<double, 1> input, NDArray<double, 1> d_activation, cudaStream_t stream)
@@ -1289,6 +1431,22 @@ public:
         grid.y = ceil((float)(intr_y + 1) / block.y);
 
         gpu::matrixLinear<<<grid, block, 0, stream>>>(input.getData(), d_activation.getData(), intr_x, intr_y);
+    }
+
+    void softmaxActivation(NDArray<double, 1> input, NDArray<double, 1> softmax_sum, NDArray<double, 1> d_activation, cudaStream_t stream)
+    {
+        unsigned intr_x, intr_y;
+        dim3 grid, block;
+
+        intr_x = input.getDimensions()[0];
+        intr_y = input.getDimensions()[1];
+
+        block.x = ((intr_x + 1) > 32) ? 32 : (intr_x + 1);
+        block.y = ((intr_y + 1) > 32) ? 32 : (intr_y + 1);
+        grid.x = ceil((float)(intr_x + 1) / block.x);
+        grid.y = ceil((float)(intr_y + 1) / block.y);
+
+        gpu::matrixSoftmax<<<grid, block, 0, stream>>>(input.getData(), softmax_sum.getData(), d_activation.getData(), intr_x, intr_y);
     }
 
     void squaredError(NDArray<double, 1> Difference, NDArray<double, 1> Squared_Error, cudaStream_t stream)
@@ -1320,6 +1478,27 @@ public:
         gpu::matrixFindMean<<<grid, block, 0, stream>>>(y.getData(), intr_x, intr_y, intr_y);
     }
 
+    double findMean(NDArray<double, 0> A)
+    {
+        double mean;
+        cpu::getMean(A.getData(), &mean, A.getNoOfElem());
+        return mean;
+    }
+
+    NDArray<double, 0> findSquare(NDArray<double, 0> A)
+    {
+        NDArray<double, 0> result(A.getNoOfDimensions(), A.getDimensions());
+        cpu::getSquare(A.getData(), result.getData(), A.getNoOfElem());
+        return result;
+    }
+
+    NDArray<double, 0> findSquareRoot(NDArray<double, 0> A)
+    {
+        NDArray<double, 0> result(A.getNoOfDimensions(), A.getDimensions());
+        cpu::getSquareRoot(A.getData(), result.getData(), A.getNoOfElem());
+        return result;
+    }
+
     void findDifference(NDArray<double, 1> Y_predict, NDArray<double, 1> Y_target, NDArray<double, 1> Difference, cudaStream_t stream)
     {
         unsigned intr_x, intr_y;
@@ -1336,11 +1515,55 @@ public:
 
         gpu::matrixDifference<<<grid, block, 0, stream>>>(Y_predict.getData(), Y_target.getData(), Difference.getData(), intr_x, intr_y);
 
-        // std::cout << "Y_target:\n";
-        // Y_target.printData();
-        // std::cout << "Y_predict:\n";
-        // Y_predict.printData();
-        // std::cout << "Difference\n";
-        // Difference.printData();
     }
+
+    NDArray<double, 0> findDifference(NDArray<double, 0> A, NDArray<double, 0> B)
+    {
+        NDArray<double, 0> result;
+        unsigned nDim, flag;
+
+        nDim = A.getNoOfDimensions();
+        flag = 1;
+
+        if (nDim == B.getNoOfDimensions())
+        {
+            for (int i = 0; i < nDim; i++)
+            {
+                if (A.getDimensions()[i] != B.getDimensions()[i])
+                {
+                    flag = 0;
+                    break;
+                }
+            }
+            if (flag)
+            {
+                result = NDArray<double, 0>(nDim, A.getDimensions());
+                cpu::getDifference(A.getData(), B.getData(), result.getData(), A.getNoOfElem());
+            }
+            else
+                std::cout << "NDArrays have different dimension sizes.\n";
+        }
+        else
+            std::cout << "NDArrays have different no of dimensions.\n";
+
+        return result;
+    }
+    
+    void crossEntropy(NDArray<double, 1> Y_predict, NDArray<double, 1> Y_target, NDArray<double, 1> Difference, NDArray<double, 1> Cost, cudaStream_t stream)
+    {
+        unsigned intr_x, intr_y;
+        dim3 grid, block;
+
+        intr_x = Y_target.getDimensions()[0];
+        intr_y = Y_target.getDimensions()[1];
+
+        block.x = intr_x > 32 ? 32 : intr_x;
+        block.y = intr_y > 32 ? 32 : intr_y;
+
+        grid.x = ceil((float)intr_x / block.x);
+        grid.y = ceil((float)intr_y / block.y);
+
+        gpu::matrixCrossEntropy<<< grid, block, 0, stream>>>(Y_predict.getData(), Y_target.getData(), Difference.getData(), intr_x, intr_y);
+    }
+
 };

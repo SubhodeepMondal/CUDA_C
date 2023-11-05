@@ -70,3 +70,37 @@
                     0.00%     411ns         1     411ns     411ns     411ns  cuDeviceTotalMem
                     0.00%     281ns         1     281ns     281ns     281ns  cuModuleGetLoadingMode
                     0.00%     201ns         1     201ns     201ns     201ns  cuDeviceGetUuid
+
+
+==21669== NVPROF is profiling process 21669, command: ./exe/DLearning
+==21669== Profiling application: ./exe/DLearning
+==21669== Profiling result:
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+ GPU activities:   28.84%  3.01119s    300000  10.037us  5.3760us  83.454us  gpu::matrixUpdateWeightsBiasesRMSprop(double*, double*, double*, double*, double*, double*, unsigned int, unsigned int)
+                   23.14%  2.41568s    650000  3.7160us  1.6000us  18.976us  gpu::matrixRollingSum(double*, double*, unsigned int, unsigned int, unsigned int)
+                   17.70%  1.84804s     50000  36.960us  32.544us  97.758us  gpu::print(double*)
+                    9.58%  999.83ms    350000  2.8560us  1.8560us  13.312us  gpu::matrixFindMean(double*, unsigned int, unsigned int, unsigned int)
+                    3.70%  386.01ms    150000  2.5730us  1.6320us  13.887us  gpu::matrixDotMul(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    3.68%  384.24ms    150000  2.5610us  1.8240us  9.3750us  gpu::matrixDifferentialWeights(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    3.02%  315.31ms    150000  2.1020us  1.8240us  9.1840us  gpu::matrixDifferentialBiases(double*, double*, double*, unsigned int, unsigned int)
+                    2.29%  239.48ms     50000  4.7890us  4.1920us  13.408us  gpu::matrixSquaredError(double*, double*, unsigned int, unsigned int)
+                    2.09%  218.29ms    100000  2.1820us  1.8240us  9.7600us  gpu::matrixDifferentialInput(double*, double*, double*, double*, unsigned int, unsigned int, unsigned int)
+                    2.00%  208.88ms    100000  2.0880us  1.9200us  7.7760us  gpu::matrixRelu(double*, double*, int, int)
+                    1.93%  201.94ms    100000  2.0190us  1.7280us  8.9600us  [CUDA memcpy DtoD]
+                    1.08%  112.40ms     50000  2.2470us  2.0470us  9.4080us  gpu::matrixDifference(double*, double*, double*, unsigned int, unsigned int)
+                    0.94%  98.128ms     50000  1.9620us  1.8230us  8.6390us  gpu::matrixLinear(double*, double*, int, int)
+                    0.00%  512.95us       418  1.2270us     736ns  6.5920us  [CUDA memcpy HtoD]
+      API calls:   71.37%  13.6948s   2200000  6.2240us      90ns  5.0726ms  cudaLaunchKernel
+                   17.76%  3.40854s     50000  68.170us  19.537us  7.1533ms  cudaDeviceSynchronize
+                   10.50%  2.01435s    100418  20.059us  2.1040us  11.986ms  cudaMemcpy
+                    0.36%  69.526ms        62  1.1214ms  1.3930us  69.405ms  cudaMalloc
+                    0.00%  108.14us       101  1.0700us      80ns  56.495us  cuDeviceGetAttribute
+                    0.00%  24.346us         1  24.346us  24.346us  24.346us  cuDeviceGetName
+                    0.00%  19.867us         1  19.867us  19.867us  19.867us  cudaStreamCreate
+                    0.00%  10.027us        85     117ns      50ns     411ns  cudaGetDeviceCount
+                    0.00%  6.3320us         1  6.3320us  6.3320us  6.3320us  cuDeviceGetPCIBusId
+                    0.00%  2.0340us         1  2.0340us  2.0340us  2.0340us  cudaSetDevice
+                    0.00%  1.9450us         3     648ns     171ns  1.5030us  cuDeviceGetCount
+                    0.00%     500ns         2     250ns     120ns     380ns  cuDeviceGet
+                    0.00%     361ns         1     361ns     361ns     361ns  cuDeviceTotalMem
+                    0.00%     191ns         1     191ns     191ns     191ns  cuModuleGetLoading

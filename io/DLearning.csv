@@ -1,0 +1,13 @@
+layer : dense	unit : 16	activation :sigmoid	Trainable parameters : 16, 2, 
+layer : dense	unit : 16	activation :sigmoid	Trainable parameters : 16, 17, 
+layer : dense	unit : 1	activation :sigmoid	Trainable parameters : 1, 17, 
+0 0.841633
+131 0.529599
+756 3.09469
+459 3.99381
+533 0.759298
+219 3.08548
+47 5.31814
+679 2.30848
+679 2.30848
+935 2.28601

@@ -16,13 +16,13 @@ typedef struct struct_Activations
 
     struct_Activations()
     {
-        activations["relu"] = relu;
-        activations["sigmoid"] = sigmoid;
-        activations["softmax"] = softmax;
-        activations["e_relu"] = e_relu;
-        activations["leaky_relu"] = leaky_relu;
-        activations["tanh"] = tanh;
-        activations["linear"] = linear;
+        activations["relu"]         =   relu;
+        activations["sigmoid"]      =   sigmoid;
+        activations["softmax"]      =   softmax;
+        activations["e_relu"]       =   e_relu;
+        activations["leaky_relu"]   =   leaky_relu;
+        activations["tanh"]         =   tanh;
+        activations["linear"]       =   linear;
     }
 } struct_Activations;
 
@@ -33,50 +33,60 @@ protected:
 
 public:
     virtual void activate(NDArray<double, 1> output, NDArray<double, 1> delta_activation, cudaStream_t stream) {}
+    virtual void activate(NDArray<double, 0> output) {}
 };
 
-class relu : public Activation
+class Relu_Activation : public Activation
 {
 public:
     void activate(NDArray<double, 1> output, NDArray<double, 1> delta_activation, cudaStream_t stream) override
     {
-        // std::cout << "In relu activation:\n";
         math.reluActivation(output, delta_activation, stream);
     }
+    void activate(NDArray<double, 0> output) override
+    {
+        math.reluActivation(output);
+    }
 };
 
-class sigmoid : public Activation
+class Sigmoid_Activation : public Activation
 {
 public:
     void activate(NDArray<double, 1> output, NDArray<double, 1> delta_activation, cudaStream_t stream) override
     {
-        // std::cout << "In sigmoid activation:\n";
         math.sigmoidActivation(output, delta_activation, stream);
     }
+    void activate(NDArray<double, 0> output) override
+    {
+        math.sigmoidActivation(output);
+    }
 };
 
-class linear : public Activation
+class Linear_Activation : public Activation
 {
 public:
     void activate(NDArray<double, 1> output, NDArray<double, 1> delta_activation, cudaStream_t stream) override
     {
-        // std::cout << "In linear activation:\n";
         math.linearActivation(output, delta_activation, stream);
+    }
+    void activate(NDArray<double, 0> output) override
+    {
+        
     }
 };
 
-// class softmax : public Activation
-// {
-// };
+class Softmax_Activation : public Activation
+{
+    NDArray<double, 1> softmax_sum;
 
-// class e_relu : public Activation
-// {
-// };
+    public:
+        void activate(NDArray<double, 1> output, NDArray<double, 1> delta_activation, cudaStream_t stream) override
+        {
+            math.softmaxActivation(output, softmax_sum, delta_activation,stream);
+        }
+        
+        void activate(NDArray<double, 0> output) override
+        {
 
-// class leaky_rely : public Activation
-// {
-// };
-
-// class tanh : public Activation
-// {
-// };
+        }
+};

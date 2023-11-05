@@ -67,45 +67,50 @@ void generatorFunctionSinWave(NDArray<double, 0> x, NDArray<double, 0> y)
     std::default_random_engine generator;
     std::uniform_real_distribution<double> distribution(0.0f, 180.0f);
 
-    for(i = 0; i< no_of_samples; i++)
+    for (i = 0; i < no_of_samples; i++)
     {
         angle = distribution(generator);
         ptrA[i] = angle * (3.14159 / 180.0f);
-        ptrB[i] = 5 * sin(ptrA[i]) * sin(ptrA[i] - 0.45) * sin(ptrA[i] + 1.25) * sin(ptrA[i] - 2.05);//
+        ptrB[i] =  sin(ptrA[i]) * sin(ptrA[i] - 0.45) * sin(ptrA[i] + 1.25 );
     }
 }
 
 int main()
 {
-    freopen("io/input.txt","r",stdin);
+    NDMath math;
+    freopen("io/input.txt", "r", stdin);
     freopen("io/DLearning.csv", "w", stdout);
-    unsigned no_of_feature, no_of_sample,epochs,batch_size;
+    unsigned no_of_feature, no_of_sample, epochs, batch_size;
     unsigned a[1];
     no_of_feature = 1;
-    no_of_sample = 1000;
+    no_of_sample = 10000;
     a[0] = no_of_feature;
 
-    std::cin>>epochs;
-    std::cin>>batch_size;
+    std::cin >> epochs;
+    std::cin >> batch_size;
 
     NDArray<double, 0> input_shape(1, a);
     NDArray<double, 0> X_train(2, no_of_feature, no_of_sample);
     NDArray<double, 0> y_train(2, 1, no_of_sample);
-    NDArray<double, 0> X_test(2, no_of_feature, 250);
-    NDArray<double, 0> y_test(2, 1, 250);
-    
+    NDArray<double, 0> X_test(2, no_of_feature, 100);
+    NDArray<double, 0> y_test(2, 1, 100);
+    NDArray<double, 0> y_predict;
+
 
     generatorFunctionSinWave(X_train, y_train);
     generatorFunctionSinWave(X_test, y_test);
 
-    // X_train.printData();
-    // y_train.printData();
 
     Model *model = new Sequential();
-    model->add(new Dense{64, input_shape, "relu", "Dense_1"});
-    model->add(new Dense{64, "relu", "Dense_2"});
-    model->add(new Dense{1, "linear", "Dense_3"});
-    model->compile("mean_squared_error", "rmsprop", "accuracy");
+    model->add(new Dense{32, input_shape, "relu", "Dense_1"});
+    model->add(new Dense{32, "relu", "Dense_2"});
+    model->add(new Dense{1, "softmax", "Dense_3"});
+    model->compile("mean_squared_error", "ADAM", "accuracy");
     model->summary();
+
     model->fit(X_train, y_train, epochs, batch_size);
+
+    y_predict = model->predict(X_test);
+    NDArray<double, 0> RMS = math.findSquareRoot(math.findSquare(math.findDifference(y_predict,y_test)));
+    std::cout << " " << math.findMean(RMS);
 }

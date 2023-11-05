@@ -350,7 +350,7 @@ public:
 class ADAM : public Optimizer
 {
     unsigned *arr;
-    double learning_rate = 0.01;
+    double learning_rate = 0.0001;
     NDArray<double, 1> learning_rate_weights;
     NDArray<double, 1> learning_rate_biases;
     NDArray<double, 1> sum_delta_weights;
@@ -404,6 +404,7 @@ public:
         math.getDifferentialWeights(input, delta_activation, difference, delta_weights, delta_weights_intermediate, stream);
         math.getDifferentialInput(weights, delta_activation, difference, difference_input, delta_biases_intermediate, delta_input, stream);
 
+        
         // math.updateLearningRateBiasesAdadelta(epsalon, sigma, sum_delta_biases, delta_biases, learning_rate_biases, stream);
         // math.updateLearningRateWeightsAdadelta(epsalon, sigma, sum_delta_weights, delta_weights, learning_rate_weights, stream);
 
